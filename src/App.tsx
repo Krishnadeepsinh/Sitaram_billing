@@ -1,0 +1,91 @@
+import { useEffect, useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
+import { ArrowRightLeft, BarChart3, Bell, ChevronLeft, ChevronRight, CircleDollarSign, Command, DatabaseZap, FileText, HardDriveDownload, LayoutDashboard, LogOut, Menu, Moon, Package, Search, Settings, ShieldCheck, Sun, Users, Wallet, X } from 'lucide-react'
+import { apiHealth, currentAdmin, login, logout } from './lib/api'
+import { CustomersPage, PlansPage } from './pages/Management'
+import { BackupPage, DashboardPage, ExpensesPage, InvoicesPage, PaymentsPage, RemindersPage, ReportsPage, SettingsPage } from './pages/Operations'
+import './App.css'
+
+type ServiceType = 'cable' | 'broadband'
+const navigation = [['Dashboard', LayoutDashboard], ['Subscribers', Users], ['Plans', Package], ['Invoices', FileText], ['Payments', Wallet], ['Reports', BarChart3], ['Expenses', CircleDollarSign], ['Reminders', Bell], ['Settings', Settings], ['Manual Backup', HardDriveDownload]] as const
+const navigationGroups = [{ label: 'Operations', items: navigation.slice(0, 5) }, { label: 'Analytics & Admin', items: navigation.slice(5) }]
+type Page = typeof navigation[number][0]
+const pageSlugs = Object.fromEntries(navigation.map(([page]) => [page, page.toLowerCase().replace(' ', '-')])) as Record<Page, string>
+
+function pageFromHash(): Page {
+  const slug = window.location.hash.replace(/^#\/?/, '')
+  return navigation.find(([page]) => pageSlugs[page] === slug)?.[0] ?? 'Dashboard'
+}
+
+function App() {
+  const [username, setUsername] = useState<string | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [service, setService] = useState<ServiceType>('cable')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sitaram-sidebar') === 'collapsed')
+  const [commandOpen, setCommandOpen] = useState(false)
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('sitaram-theme') === 'dark' ? 'dark' : 'light')
+  const [page, setPage] = useState<Page>(pageFromHash)
+  const [dbState, setDbState] = useState<{ status: 'ok' | 'unavailable'; storage: 'local' | 'cloud' | 'unknown' }>({ status: 'unavailable', storage: 'unknown' })
+
+  useEffect(() => {
+    currentAdmin().then((admin) => setUsername(admin.username)).catch(() => setUsername(null)).finally(() => setAuthLoading(false))
+    apiHealth().then(setDbState)
+  }, [])
+  useEffect(() => { const syncPage = () => setPage(pageFromHash()); window.addEventListener('hashchange', syncPage); return () => window.removeEventListener('hashchange', syncPage) }, [])
+  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('sitaram-theme', theme) }, [theme])
+  useEffect(() => { localStorage.setItem('sitaram-sidebar', sidebarCollapsed ? 'collapsed' : 'expanded') }, [sidebarCollapsed])
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommandOpen((open) => !open) }
+      if (event.key === 'Escape') { setCommandOpen(false); setMenuOpen(false) }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  const navigateTo = (nextPage: Page) => { setPage(nextPage); setMenuOpen(false); window.location.hash = `/${pageSlugs[nextPage]}` }
+  const signOut = () => void logout().finally(() => setUsername(null))
+  if (authLoading) return <LoadingWorkspace />
+  if (!username) return <LoginScreen onSuccess={setUsername} />
+  const serviceName = service === 'cable' ? 'Cable' : 'Broadband'
+  const connected = dbState.status === 'ok'
+
+  return <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <a className="skip-link" href="#main-content">Skip to content</a>
+    {menuOpen ? <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} /> : null}
+    <aside className={menuOpen ? 'sidebar sidebar-open' : 'sidebar'}>
+      <div className="sidebar-header">
+        <div className="brand"><span className="brand-logo"><img src="/logo.png" width="32" height="32" alt="Sitaram Cable & Broadband" /></span><span className="brand-copy">SITARAM <small>Cable & Broadband</small></span></div>
+        <button className="service-mode" aria-label={`Switch to ${service === 'cable' ? 'Broadband' : 'Cable'} mode`} onClick={() => setService(service === 'cable' ? 'broadband' : 'cable')} title={`${serviceName} workspace`}><span><i className={service} /> <b>{serviceName.toUpperCase()}</b></span><ArrowRightLeft size={14} aria-hidden="true" /></button>
+      </div>
+      <nav aria-label="Primary navigation">{navigationGroups.map((group) => <section className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map(([label, Icon]) => <button className={page === label ? 'nav-item active' : 'nav-item'} aria-current={page === label ? 'page' : undefined} title={sidebarCollapsed ? label : undefined} key={label} onClick={() => navigateTo(label)}><Icon size={17} aria-hidden="true" /><span>{label}</span></button>)}</section>)}</nav>
+      <div className={`database-state ${dbState.status}`} title={connected ? `${dbState.storage} database connected` : 'Database connection unavailable'}><span className="database-dot" /><span><strong>{serviceName.toUpperCase()} DB</strong><small>{connected ? (dbState.storage === 'cloud' ? 'Securely synced' : 'Local storage connected') : 'Connection unavailable'}</small></span><DatabaseZap size={15} aria-hidden="true" /></div>
+    </aside>
+
+    <main id="main-content">
+      <header className="app-topbar">
+        <div className="topbar-start"><button className="sidebar-trigger desktop-only" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>{sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}</button><button className="sidebar-trigger mobile-only" onClick={() => setMenuOpen(true)} aria-label="Open navigation" aria-expanded={menuOpen}><Menu size={19} /></button><div className="breadcrumbs"><span>{serviceName} Workspace</span><i>/</i><strong>{page}</strong></div></div>
+        <div className="topbar-actions"><button className="command-trigger" onClick={() => setCommandOpen(true)}><Search size={15} aria-hidden="true" /><span>Search anything…</span><kbd>Ctrl K</kbd></button><span className={`connection-pill ${connected ? 'connected' : ''}`}><i />{connected ? 'Connected' : 'Offline'}</span><button className="topbar-icon" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} theme`}>{theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="user-chip" onClick={signOut} aria-label={`Sign out ${username}`}><span>{username.slice(0, 1).toUpperCase()}</span><span><strong>{username}</strong><small>Administrator</small></span><LogOut size={15} /></button></div>
+      </header>
+      <div className="workspace-content">{page === 'Dashboard' ? <DashboardPage serviceType={service} onNavigate={navigateTo} /> : page === 'Plans' ? <PlansPage serviceType={service} /> : page === 'Subscribers' ? <CustomersPage serviceType={service} /> : page === 'Invoices' ? <InvoicesPage serviceType={service} /> : page === 'Payments' ? <PaymentsPage serviceType={service} /> : page === 'Reports' ? <ReportsPage serviceType={service} /> : page === 'Expenses' ? <ExpensesPage /> : page === 'Reminders' ? <RemindersPage /> : page === 'Manual Backup' ? <BackupPage /> : <SettingsPage />}</div>
+    </main>
+    {commandOpen ? <CommandPalette page={page} onNavigate={(nextPage) => { navigateTo(nextPage); setCommandOpen(false) }} onClose={() => setCommandOpen(false)} /> : null}
+  </div>
+}
+
+function CommandPalette({ page, onNavigate, onClose }: { page: Page; onNavigate: (page: Page) => void; onClose: () => void }) {
+  const [query, setQuery] = useState('')
+  const results = useMemo(() => navigation.filter(([label]) => label.toLowerCase().includes(query.trim().toLowerCase())), [query])
+  return <div className="command-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="command-dialog" role="dialog" aria-modal="true" aria-labelledby="command-title"><div className="command-search"><Search size={19} aria-hidden="true" /><label className="sr-only" htmlFor="command-input" id="command-title">Search workspace</label><input id="command-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search pages and actions…" autoComplete="off" autoFocus /><button onClick={onClose} aria-label="Close search"><X size={17} /></button></div><div className="command-results"><p>Navigate</p>{results.map(([label, Icon]) => <button className={page === label ? 'selected' : ''} key={label} onClick={() => onNavigate(label)}><span><Icon size={17} /><span><strong>{label}</strong><small>Open {label.toLowerCase()} workspace</small></span></span><kbd>Enter</kbd></button>)}{results.length === 0 ? <div className="command-empty"><Search size={24} /><span>No matching pages</span></div> : null}</div><footer><span><kbd>Tab</kbd> Navigate</span><span><kbd>Esc</kbd> Close</span></footer></section></div>
+}
+
+function LoadingWorkspace() { return <div className="loading-screen"><div className="loading-brand"><span className="brand-logo"><img src="/logo.png" width="32" height="32" alt="" /></span><span><strong>Preparing workspace</strong><small>Loading secure billing data…</small></span></div><div className="loading-track"><i /></div></div> }
+
+function LoginScreen({ onSuccess }: { onSuccess: (username: string) => void }) {
+  const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [showPassword, setShowPassword] = useState(false); const [error, setError] = useState(''); const [submitting, setSubmitting] = useState(false)
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSubmitting(true); setError(''); try { const admin = await login(username, password); onSuccess(admin.username) } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to sign in.') } finally { setSubmitting(false) } }
+  return <main className="login-page"><section className="login-shell"><aside className="login-aside"><div className="brand"><span className="brand-logo login-logo"><img src="/logo.png" width="52" height="52" alt="Sitaram Cable & Broadband" /></span><span>SITARAM <small>Cable & Broadband</small></span></div><div><span className="login-kicker">Operations Console</span><h1>Billing clarity.<br />Every rupee traced.</h1><p>One secure workspace for cable and broadband subscribers, billing, collections, and audit-ready reports.</p></div><div className="login-trust"><span><ShieldCheck size={17} />Server-side security</span><span><DatabaseZap size={17} />Protected financial ledger</span></div></aside><section className="login-card"><div className="login-card-heading"><span className="login-icon"><Command size={20} /></span><div><p className="eyebrow">Administrator access</p><h2>Welcome back</h2></div></div><p className="login-copy">Enter your credentials to continue to the operations workspace.</p><form onSubmit={submit}><label>Username<input name="username" autoComplete="username" spellCheck={false} value={username} onChange={(event) => setUsername(event.target.value)} required /></label><label>Password<span className="password-field"><input name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /><button type="button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Hide' : 'Show'}</button></span></label>{error ? <p className="form-error" role="alert">{error}</p> : null}<button className="primary login-button" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in securely'}</button></form><p className="login-help"><ShieldCheck size={13} /> Authorized business administrator only</p></section></section></main>
+}
+
+export default App
