@@ -24,15 +24,22 @@ pnpm bootstrap:admin
 
 `bootstrap:admin` uses `ADMIN_USERNAME` and `ADMIN_PASSWORD`, and refuses to overwrite an existing administrator.
 
-Run the complete local UI/API environment with `pnpm dev`. It uses `local.db` when `TURSO_DATABASE_URL=file:local.db`; this database is separate from any deployed/cloud database. `pnpm dev:full` remains available after the directory has been linked to a Vercel project.
+Run the complete local UI/API environment with `pnpm dev` (or the compatible `pnpm dev:full` alias). It uses `local.db` when `TURSO_DATABASE_URL=file:local.db`; this database is separate from any deployed/cloud database.
 
 ## Verification
 
 ```powershell
 pnpm check
+pnpm audit:data
 ```
 
-This runs unit and LibSQL integration tests, linting, TypeScript compilation, and the optimized Vite build.
+`pnpm check` runs unit and LibSQL integration tests, linting, TypeScript compilation, and the optimized Vite build. `pnpm audit:data` performs a read-only integrity audit of the configured database for overlapping service periods, malformed 30-day periods, orphaned or excessive allocations, duplicate retry keys, and billing-position drift.
+
+Before a production migration, validate the server-only environment without printing any secret values:
+
+```powershell
+pnpm verify:production-env
+```
 
 ## Production deployment
 
@@ -47,7 +54,13 @@ Do not expose Turso credentials in variables prefixed with `VITE_`; all database
 
 ## Backups and recovery
 
-Settings → **Download JSON backup** exports areas, plans, customers, invoices, charges, merge history, payments, allocations, expenses, and ID sequences. Password hashes and login-attempt records are intentionally excluded.
+Settings → **Download JSON backup** exports areas, plans, customers, status and plan history, invoices, charges, merge history, payments, allocations, expenses, audit events, and ID sequences. Password hashes, sessions, and login-attempt records are intentionally excluded.
+
+Validate any downloaded backup before storing it off-site:
+
+```powershell
+pnpm validate:backup C:\path\to\sitaram-backup-YYYY-MM-DD.json
+```
 
 The application is export-only. Restoring data is deliberately a database-administrator operation because an accidental browser import could overwrite the financial ledger.
 
@@ -55,9 +68,13 @@ The application is export-only. Restoring data is deliberately a database-admini
 
 - Payments are never edited. Reverse and re-enter them.
 - Reversing a payment replays all later active payments oldest-first.
-- Only the latest invoice can be deleted. Any payment allocated to it is reversed in the same transaction, then the customer ledger is rebuilt.
+- The latest normal renewal or an independent historical-gap correction can be deleted. Linked payments are reversed in the same transaction, then coverage and the ledger are rebuilt.
 - Customer deletion is a soft archive; financial history remains.
 - Expenses are immutable and soft-deleted when incorrect.
 - Money is stored as integer paise and dates as plain `YYYY-MM-DD` business dates.
 
 See [implementation decisions](docs/IMPLEMENTATION_DECISIONS.md) for resolved specification conflicts.
+
+## Open-source document font
+
+PDF documents bundle Noto Sans Gujarati from the official Google Fonts repository under the SIL Open Font License 1.1. This keeps Gujarati subscriber names readable in offline invoice and receipt files.

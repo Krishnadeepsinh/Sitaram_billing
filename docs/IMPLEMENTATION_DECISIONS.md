@@ -8,7 +8,13 @@ An opening **Due (Dr)** is stored as a dedicated `opening_due` charge on the cus
 
 ## Invoice correction
 
-Only the latest invoice for a customer can be deleted. This preserves the canonical next-billing date and prevents gaps behind later invoices. Any payment allocated to that invoice is soft-deleted with all of its allocations in the same transaction, then the remaining customer ledger is replayed. If a linked payment also covered another invoice, that invoice is recalculated to its correct partial or unpaid state.
+Normal renewals can be deleted only when they are the latest coverage record. A historical-gap invoice may be deleted independently because it is explicitly a correction record and must not move current renewal coverage backward. Any linked payment is soft-deleted with all allocations in the same transaction, remaining payments are replayed, and the billing position is derived again from live coverage and activation history.
+
+## Fixed 30-day coverage
+
+One cycle is exactly 30 calendar days: expiry is `start + (30 × cycles) − 1 day`, and the next eligible date is the following day. New customers start today unless installation is later. Existing customers use their derived next eligible date. Overlap protection runs in the write transaction and in a database trigger. Historical invoices require an uncovered past period, continuous active service, a recorded reason, and one unambiguous historical plan price.
+
+Payment status and service status are independent. A paid invoice may represent expired service; an unpaid invoice may represent a future renewal. The UI therefore displays service coverage, payment balance, service expiry, payment due date, and next billing date separately.
 
 ## Payment reversal
 
@@ -16,7 +22,7 @@ Reversing a payment replays every remaining payment in creation order and rebuil
 
 ## Competitor-inspired scope
 
-The product adopts fast due-focused lookup, customer history, bulk subscription billing, filters, clear reports, and manual WhatsApp document sharing seen in Bix42, Zoho Invoice, and myBillBook. Inventory, GST automation, payment gateways, collection-agent accounts, customer portals, and automatic messaging remain out of scope because this is a single-admin service ledger and the locked specification does not authorize those systems.
+The product adopts fast due-focused lookup, customer history, bulk subscription billing, invoice/date/area filters, cash-versus-UPI reporting, expiring-soon queues, exports, and deliberate manual WhatsApp reminders seen in established billing tools. Inventory, GST automation, payment gateways, collection-agent accounts, customer portals, and automatic messaging remain out of scope because this is a single-admin service ledger and the locked specification does not authorize those systems.
 
 ## Bulk bill-through month
 

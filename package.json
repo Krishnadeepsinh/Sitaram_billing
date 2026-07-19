@@ -2,16 +2,25 @@
   "name": "web",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=20.12",
+    "pnpm": ">=10"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:full": "vercel dev",
+    "dev:full": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vitest run",
     "check": "pnpm test && pnpm lint && pnpm build",
     "migrate": "node scripts/migrate.mjs",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
+    "verify:production-env": "node scripts/verify-production-env.mjs",
+    "validate:backup": "node scripts/validate-backup.mjs",
+    "audit:data": "node scripts/audit-data.mjs",
+    "audit:live": "node scripts/deep-live-audit.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -23,6 +32,7 @@
     "pdf-lib": "^1.17.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "regenerator-runtime": "^0.14.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

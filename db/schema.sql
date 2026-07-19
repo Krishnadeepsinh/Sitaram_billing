@@ -14,6 +14,13 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   blocked_until INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  token_hash TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS business_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   business_name TEXT NOT NULL,
@@ -46,13 +53,16 @@ CREATE TABLE IF NOT EXISTS plans (
   id INTEGER PRIMARY KEY,
   service_type TEXT NOT NULL CHECK (service_type IN ('cable', 'broadband')),
   name TEXT NOT NULL,
-  price_paise INTEGER NOT NULL CHECK (price_paise >= 0),
+  price_paise INTEGER NOT NULL CHECK (price_paise > 0),
   duration_days INTEGER NOT NULL DEFAULT 30 CHECK (duration_days = 30),
   units TEXT NOT NULL DEFAULT '',
   is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
   sort_order INTEGER NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS plans_service_name_unique
+  ON plans(service_type, lower(trim(name)));
 
 CREATE TABLE IF NOT EXISTS customers (
   id INTEGER PRIMARY KEY,
@@ -75,8 +85,45 @@ CREATE TABLE IF NOT EXISTS customers (
   UNIQUE (service_type, customer_code)
 );
 
+CREATE TABLE IF NOT EXISTS customer_status_history (
+  id INTEGER PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id),
+  status TEXT NOT NULL CHECK (status IN ('active', 'inactive')),
+  effective_date TEXT NOT NULL CHECK (date(effective_date) = effective_date),
+  reason TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS customer_status_history_lookup
+  ON customer_status_history(customer_id, effective_date, id);
+
+CREATE TABLE IF NOT EXISTS customer_plan_history (
+  id INTEGER PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id),
+  plan_id INTEGER NOT NULL REFERENCES plans(id),
+  plan_name_snapshot TEXT NOT NULL,
+  price_paise_snapshot INTEGER NOT NULL CHECK (price_paise_snapshot > 0 AND price_paise_snapshot <= 1000000000000),
+  effective_date TEXT NOT NULL CHECK (date(effective_date) = effective_date),
+  reason TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS customer_plan_history_lookup
+  ON customer_plan_history(customer_id, effective_date, id);
+
+CREATE TABLE IF NOT EXISTS customer_plan_gaps (
+  id INTEGER PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id),
+  effective_date TEXT NOT NULL CHECK (date(effective_date) = effective_date),
+  reason TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS customer_plan_gaps_lookup
+  ON customer_plan_gaps(customer_id, effective_date, id);
+
 CREATE UNIQUE INDEX IF NOT EXISTS active_stb_number_unique
-  ON customers(service_type, stb_number)
+  ON customers(service_type, lower(trim(stb_number)))
   WHERE is_deleted = 0 AND stb_number IS NOT NULL AND trim(stb_number) <> '';
 
 CREATE TABLE IF NOT EXISTS invoices (
@@ -85,6 +132,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   service_type TEXT NOT NULL CHECK (service_type IN ('cable', 'broadband')),
   customer_name_snapshot TEXT NOT NULL,
+  area_id_snapshot INTEGER NOT NULL,
   area_name_snapshot TEXT NOT NULL,
   plan_name_snapshot TEXT NOT NULL,
   stb_number_snapshot TEXT,
@@ -97,11 +145,15 @@ CREATE TABLE IF NOT EXISTS invoices (
   total_payable_paise INTEGER NOT NULL CHECK (total_payable_paise >= 0),
   due_date TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'unpaid' CHECK (status IN ('unpaid', 'partial', 'paid')),
+  billing_mode TEXT NOT NULL DEFAULT 'normal' CHECK (billing_mode IN ('normal', 'historical')),
+  historical_reason TEXT,
+  is_combined INTEGER NOT NULL DEFAULT 0 CHECK (is_combined IN (0, 1)),
   is_merged INTEGER NOT NULL DEFAULT 0 CHECK (is_merged IN (0, 1)),
   merged_into_invoice_id INTEGER REFERENCES invoices(id),
   is_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_deleted IN (0, 1)),
   created_at TEXT NOT NULL,
-  CHECK (period_end >= period_start),
+  CHECK (date(period_start) = period_start AND date(period_end) = period_end AND date(issued_date) = issued_date AND date(due_date) = due_date),
+  CHECK (period_end = date(period_start, printf('+%d days', months_billed * 30 - 1))),
   UNIQUE (service_type, invoice_code)
 );
 
@@ -129,17 +181,26 @@ CREATE TABLE IF NOT EXISTS payments (
   payment_code TEXT NOT NULL,
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   service_type TEXT NOT NULL CHECK (service_type IN ('cable', 'broadband')),
+  customer_code_snapshot TEXT NOT NULL,
+  customer_name_snapshot TEXT NOT NULL,
+  area_id_snapshot INTEGER NOT NULL,
+  area_name_snapshot TEXT NOT NULL,
+  stb_number_snapshot TEXT,
   payment_date TEXT NOT NULL,
   amount_received_paise INTEGER NOT NULL CHECK (amount_received_paise >= 0),
   discount_given_paise INTEGER NOT NULL DEFAULT 0 CHECK (discount_given_paise >= 0),
   payment_mode TEXT NOT NULL CHECK (payment_mode IN ('cash', 'upi', 'system_credit')),
   notes TEXT,
+  request_key TEXT,
   resulting_status TEXT NOT NULL CHECK (resulting_status IN ('settled', 'partial', 'credit_added')),
   is_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_deleted IN (0, 1)),
   created_at TEXT NOT NULL,
   UNIQUE (service_type, payment_code),
   CHECK ((payment_mode = 'system_credit' AND amount_received_paise = 0 AND discount_given_paise = 0) OR payment_mode IN ('cash', 'upi'))
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS payments_request_key_unique
+  ON payments(service_type, request_key) WHERE request_key IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS payments_customer_created_index ON payments(customer_id, created_at);
 
@@ -164,6 +225,20 @@ CREATE TABLE IF NOT EXISTS expenses (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS audit_events (
+  id INTEGER PRIMARY KEY,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('customer', 'invoice', 'payment', 'expense', 'plan')),
+  entity_id INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  reason TEXT,
+  details_json TEXT NOT NULL DEFAULT '{}',
+  created_by TEXT NOT NULL DEFAULT 'admin',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS audit_events_entity_lookup
+  ON audit_events(entity_type, entity_id, created_at);
+
 CREATE TRIGGER IF NOT EXISTS customers_area_service_match
 BEFORE INSERT ON customers FOR EACH ROW
 WHEN (SELECT service_type FROM areas WHERE id = NEW.area_id) <> NEW.service_type
@@ -177,6 +252,18 @@ BEGIN SELECT RAISE(ABORT, 'Plan belongs to another service'); END;
 CREATE TRIGGER IF NOT EXISTS customers_service_type_immutable
 BEFORE UPDATE OF service_type ON customers FOR EACH ROW
 BEGIN SELECT RAISE(ABORT, 'Customer service type cannot change'); END;
+
+CREATE TRIGGER IF NOT EXISTS customer_identity_immutable
+BEFORE UPDATE OF customer_code, opening_balance_paise, opening_balance_type ON customers FOR EACH ROW
+BEGIN SELECT RAISE(ABORT, 'Customer identity and opening balance cannot change'); END;
+
+CREATE TRIGGER IF NOT EXISTS area_service_type_immutable
+BEFORE UPDATE OF service_type ON areas FOR EACH ROW
+BEGIN SELECT RAISE(ABORT, 'Area service type cannot change'); END;
+
+CREATE TRIGGER IF NOT EXISTS plan_service_type_immutable
+BEFORE UPDATE OF service_type ON plans FOR EACH ROW
+BEGIN SELECT RAISE(ABORT, 'Plan service type cannot change'); END;
 
 CREATE TRIGGER IF NOT EXISTS customers_area_service_match_on_update
 BEFORE UPDATE OF area_id ON customers FOR EACH ROW
@@ -221,3 +308,14 @@ BEGIN SELECT RAISE(ABORT, 'Payment and invoice belong to different services'); E
 CREATE TRIGGER IF NOT EXISTS allocation_links_immutable
 BEFORE UPDATE OF payment_id, invoice_id ON payment_allocations FOR EACH ROW
 BEGIN SELECT RAISE(ABORT, 'Allocation links cannot change'); END;
+
+CREATE TRIGGER IF NOT EXISTS invoice_period_no_overlap
+BEFORE INSERT ON invoices FOR EACH ROW
+WHEN NEW.is_combined = 0 AND EXISTS (
+  SELECT 1 FROM invoices existing
+  WHERE existing.customer_id = NEW.customer_id
+    AND existing.is_deleted = 0 AND existing.is_merged = 0
+    AND existing.period_start <= NEW.period_end
+    AND existing.period_end >= NEW.period_start
+)
+BEGIN SELECT RAISE(ABORT, 'Invoice period overlaps existing coverage'); END;

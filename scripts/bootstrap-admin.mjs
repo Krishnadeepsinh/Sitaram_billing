@@ -6,7 +6,7 @@ try { loadEnvFile('.env.local') } catch (error) { if (error?.code !== 'ENOENT') 
 
 const { TURSO_DATABASE_URL: url, TURSO_AUTH_TOKEN: authToken, ADMIN_USERNAME: username, ADMIN_PASSWORD: password } = process.env
 if (!url || (!url.startsWith('file:') && !authToken) || !username || !password) throw new Error('Set TURSO_DATABASE_URL, TURSO_AUTH_TOKEN (for remote databases), ADMIN_USERNAME, and ADMIN_PASSWORD.')
-if (password.length < 12) throw new Error('ADMIN_PASSWORD must contain at least 12 characters.')
+if (password.length < 10) throw new Error('ADMIN_PASSWORD must contain at least 10 characters.')
 const client = createClient({ url, authToken })
 const exists = await client.execute('SELECT id FROM admin_auth WHERE id = 1')
 if (exists.rows[0]) throw new Error('Admin account already exists. Use the password-change flow instead.')

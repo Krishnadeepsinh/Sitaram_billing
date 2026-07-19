@@ -1,36 +1,64 @@
+import 'regenerator-runtime/runtime.js'
 import fontkit from '@pdf-lib/fontkit'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
-import gujaratiFontUrl from '@fontsource/noto-sans-gujarati/files/noto-sans-gujarati-gujarati-400-normal.woff?url'
+import gujaratiFontUrl from '../assets/NotoSansGujarati-variable.ttf?url'
 import type { BusinessSettings, InvoiceDetail, PaymentDetail, Report } from './api'
+import { formatBusinessDate } from './date'
 
 type Row = { label: string; value: string }
 const pdfMoney = (paise: number) => `INR ${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-async function createPdf(title: string, code: string, rows: Row[], settings: BusinessSettings) {
+export async function createPdfBytes(title: string, code: string, rows: Row[], settings: BusinessSettings) {
   const pdf = await PDFDocument.create(); pdf.registerFontkit(fontkit)
   const regular = await pdf.embedFont(StandardFonts.Helvetica); const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
   const gujarati = await pdf.embedFont(await fetch(gujaratiFontUrl).then((response) => response.arrayBuffer()))
+  const logo = await embedLogo(pdf, settings.logoUrl || '/logo.png')
   let page = pdf.addPage([595, 842]); let y = 730
   const header = () => {
     page.drawRectangle({ x: 0, y: 760, width: 595, height: 82, color: rgb(0.06, 0.16, 0.26) })
     page.drawText(settings.businessName || 'Sitaram Billing', { x: 40, y: 804, size: 19, font: bold, color: rgb(1, 1, 1) })
     page.drawText(title, { x: 40, y: 782, size: 11, font: regular, color: rgb(.86, .91, .96) })
     page.drawText(code, { x: 390, y: 798, size: 11, font: bold, color: rgb(1, .75, .35) })
-    page.drawRectangle({ x: 518, y: 779, width: 37, height: 37, borderWidth: 1, borderColor: rgb(.62, .72, .82) })
-    page.drawText('LOGO', { x: 524, y: 794, size: 7, font: bold, color: rgb(.72, .8, .87) })
+    if (logo) page.drawImage(logo, { x: 516, y: 778, width: 40, height: 40 })
+    else {
+      page.drawRectangle({ x: 518, y: 779, width: 37, height: 37, borderWidth: 1, borderColor: rgb(.62, .72, .82) })
+      page.drawText('LOGO', { x: 524, y: 794, size: 7, font: bold, color: rgb(.72, .8, .87) })
+    }
   }
   const addPage = () => { page = pdf.addPage([595, 842]); y = 770 }
   header()
   for (const row of rows) {
     if (y < 70) addPage()
     page.drawText(row.label, { x: 40, y, size: 9, font: bold, color: rgb(.38, .46, .56) })
-    drawMixedText(page, row.value || '—', 190, y, 10.5, regular, gujarati)
-    page.drawLine({ start: { x: 40, y: y - 9 }, end: { x: 555, y: y - 9 }, thickness: .5, color: rgb(.89, .91, .94) })
-    y -= 27
+    const lines = wrapText(row.value || '—', 58)
+    lines.forEach((line, index) => drawMixedText(page, line, 190, y - index * 13, 10.5, regular, gujarati))
+    const rowHeight = Math.max(27, 14 + lines.length * 13)
+    page.drawLine({ start: { x: 40, y: y - rowHeight + 9 }, end: { x: 555, y: y - rowHeight + 9 }, thickness: .5, color: rgb(.89, .91, .94) })
+    y -= rowHeight
   }
   const footer = [settings.address, settings.phoneNumbers, settings.upiId ? `UPI: ${settings.upiId}` : ''].filter(Boolean).join('  |  ')
   for (const pdfPage of pdf.getPages()) pdfPage.drawText(footer.slice(0, 110), { x: 40, y: 28, size: 8, font: regular, color: rgb(.38, .46, .56) })
   return pdf.save()
+}
+
+async function embedLogo(pdf: PDFDocument, url: string) {
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return undefined
+    const bytes = await response.arrayBuffer()
+    return response.headers.get('content-type')?.includes('jpeg') || /\.jpe?g(?:\?|$)/i.test(url) ? pdf.embedJpg(bytes) : pdf.embedPng(bytes)
+  } catch { return undefined }
+}
+
+function wrapText(value: string, maxCharacters: number) {
+  const words = value.split(/\s+/); const lines: string[] = []; let line = ''
+  for (const word of words) {
+    if (!line) { line = word; continue }
+    if (`${line} ${word}`.length <= maxCharacters) line += ` ${word}`
+    else { lines.push(line); line = word }
+  }
+  if (line) lines.push(line)
+  return lines.length ? lines : ['—']
 }
 
 function drawMixedText(page: ReturnType<PDFDocument['addPage']>, value: string, x: number, y: number, size: number, latin: Awaited<ReturnType<PDFDocument['embedFont']>>, gujarati: Awaited<ReturnType<PDFDocument['embedFont']>>) {
@@ -54,40 +82,40 @@ async function shareOrDownload(fileName: string, title: string, bytes: Uint8Arra
 
 function invoiceRows(invoice: InvoiceDetail): Row[] {
   return [
-    { label: 'Billing date', value: invoice.issuedDate }, { label: 'Due date', value: invoice.dueDate },
+    { label: 'Billing date', value: formatBusinessDate(invoice.issuedDate) }, { label: 'Due date', value: formatBusinessDate(invoice.dueDate) },
     { label: 'Customer', value: invoice.customerName }, { label: 'Customer / STB ID', value: `${invoice.customerCode}${invoice.stbNumber ? ` / ${invoice.stbNumber}` : ''}` },
-    { label: 'Area', value: invoice.areaName }, { label: 'Plan', value: invoice.planName }, { label: 'Service period', value: `${invoice.periodStart} to ${invoice.periodEnd}` },
-    ...invoice.mergeItems.map((item) => ({ label: `Merged ${item.invoiceCode}`, value: `${item.planName} | ${item.periodStart} to ${item.periodEnd} | ${pdfMoney(item.amountPaise)}` })),
+    { label: 'Area', value: invoice.areaName }, { label: 'Plan', value: invoice.planName }, { label: 'Service period', value: `${formatBusinessDate(invoice.periodStart)} to ${formatBusinessDate(invoice.periodEnd)}` },
+    ...invoice.mergeItems.map((item) => ({ label: `Merged ${item.invoiceCode}`, value: `${item.planName} | ${formatBusinessDate(item.periodStart)} to ${formatBusinessDate(item.periodEnd)} | ${pdfMoney(item.amountPaise)}` })),
     { label: 'Previous due at issue', value: pdfMoney(invoice.previousDueSnapshotPaise) }, { label: 'Current period amount', value: pdfMoney(invoice.currentPeriodAmountPaise) },
     { label: 'Total payable at issue', value: pdfMoney(invoice.totalPayablePaise) }, { label: 'Live invoice balance', value: pdfMoney(invoice.liveBalancePaise) },
-    ...invoice.allocations.map((item) => ({ label: `Payment ${item.paymentCode}`, value: `${item.paymentDate} | Cash ${pdfMoney(item.cashPaise)} | Discount ${pdfMoney(item.discountPaise)} | Credit ${pdfMoney(item.creditPaise)}` })),
+    ...invoice.allocations.map((item) => ({ label: `Payment ${item.paymentCode}`, value: `${formatBusinessDate(item.paymentDate)} | Cash ${pdfMoney(item.cashPaise)} | Discount ${pdfMoney(item.discountPaise)} | Credit ${pdfMoney(item.creditPaise)}` })),
     { label: 'Status', value: invoice.status.toUpperCase() },
   ]
 }
 
 function receiptRows(payment: PaymentDetail): Row[] {
   return [
-    { label: 'Payment date', value: payment.paymentDate }, { label: 'Customer', value: payment.customerName }, { label: 'Customer / STB ID', value: `${payment.customerCode}${payment.stbNumber ? ` / ${payment.stbNumber}` : ''}` },
+    { label: 'Payment date', value: formatBusinessDate(payment.paymentDate) }, { label: 'Customer', value: payment.customerName }, { label: 'Customer / STB ID', value: `${payment.customerCode}${payment.stbNumber ? ` / ${payment.stbNumber}` : ''}` },
     { label: 'Area', value: payment.areaName }, { label: 'Payment mode', value: payment.paymentMode.replace('_', ' ').toUpperCase() }, { label: 'Amount received', value: pdfMoney(payment.amountReceivedPaise) },
     { label: 'Discount given', value: pdfMoney(payment.discountGivenPaise) }, { label: 'Notes', value: payment.notes || '—' },
-    ...payment.allocations.map((item) => ({ label: `Allocated to ${item.invoiceCode}`, value: `${item.periodStart} to ${item.periodEnd} | Cash ${pdfMoney(item.cashPaise)} | Discount ${pdfMoney(item.discountPaise)} | Credit ${pdfMoney(item.creditPaise)}` })),
+    ...payment.allocations.map((item) => ({ label: `Allocated to ${item.invoiceCode}`, value: `${formatBusinessDate(item.periodStart)} to ${formatBusinessDate(item.periodEnd)} | Cash ${pdfMoney(item.cashPaise)} | Discount ${pdfMoney(item.discountPaise)} | Credit ${pdfMoney(item.creditPaise)}` })),
     { label: 'Final status', value: payment.resultingStatus.replace('_', ' ').toUpperCase() },
   ]
 }
 
-export async function downloadInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { saveBytes(`${invoice.invoiceCode}.pdf`, await createPdf('SERVICE INVOICE', invoice.invoiceCode, invoiceRows(invoice), settings)) }
-export async function shareInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { await shareOrDownload(`${invoice.invoiceCode}.pdf`, `${settings.businessName} invoice ${invoice.invoiceCode}`, await createPdf('SERVICE INVOICE', invoice.invoiceCode, invoiceRows(invoice), settings)) }
-export async function downloadReceipt(payment: PaymentDetail, settings: BusinessSettings) { saveBytes(`${payment.paymentCode}.pdf`, await createPdf('PAYMENT RECEIPT', payment.paymentCode, receiptRows(payment), settings)) }
-export async function shareReceipt(payment: PaymentDetail, settings: BusinessSettings) { await shareOrDownload(`${payment.paymentCode}.pdf`, `${settings.businessName} receipt ${payment.paymentCode}`, await createPdf('PAYMENT RECEIPT', payment.paymentCode, receiptRows(payment), settings)) }
+export async function downloadInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { saveBytes(`${invoice.invoiceCode}.pdf`, await createPdfBytes('SERVICE INVOICE', invoice.invoiceCode, invoiceRows(invoice), settings)) }
+export async function shareInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { await shareOrDownload(`${invoice.invoiceCode}.pdf`, `${settings.businessName} invoice ${invoice.invoiceCode}`, await createPdfBytes('SERVICE INVOICE', invoice.invoiceCode, invoiceRows(invoice), settings)) }
+export async function downloadReceipt(payment: PaymentDetail, settings: BusinessSettings) { saveBytes(`${payment.paymentCode}.pdf`, await createPdfBytes('PAYMENT RECEIPT', payment.paymentCode, receiptRows(payment), settings)) }
+export async function shareReceipt(payment: PaymentDetail, settings: BusinessSettings) { await shareOrDownload(`${payment.paymentCode}.pdf`, `${settings.businessName} receipt ${payment.paymentCode}`, await createPdfBytes('PAYMENT RECEIPT', payment.paymentCode, receiptRows(payment), settings)) }
 
 export async function downloadReportPdf(report: Report, settings: BusinessSettings) {
-  const rows: Row[] = [{ label: 'Report period', value: `${report.from} to ${report.to}` }, { label: 'Scope', value: report.scope.toUpperCase() }, { label: 'Billed', value: pdfMoney(report.billedPaise) }, { label: 'Collected', value: pdfMoney(report.collectedPaise) }, { label: 'Outstanding', value: pdfMoney(report.outstandingPaise) }, { label: report.netLabel, value: pdfMoney(report.netPaise) }, ...report.payments.map((payment) => ({ label: payment.paymentCode, value: `${payment.paymentDate} | ${payment.customerName} | ${pdfMoney(payment.amountReceivedPaise)} | ${payment.paymentMode}` })), ...report.expenses.map((expense) => ({ label: `Expense ${expense.category}`, value: `${expense.expenseDate} | ${expense.description} | ${pdfMoney(expense.amountPaise)}` }))]
-  saveBytes(`sitaram-report-${report.from}-${report.to}.pdf`, await createPdf('BUSINESS REPORT', report.scope.toUpperCase(), rows, settings))
+  const rows: Row[] = [{ label: 'Report period', value: `${formatBusinessDate(report.from)} to ${formatBusinessDate(report.to)}` }, { label: 'Scope', value: report.scope.toUpperCase() }, { label: 'Billed', value: pdfMoney(report.billedPaise) }, { label: 'Collected', value: pdfMoney(report.collectedPaise) }, { label: 'Discount given', value: pdfMoney(report.discountGivenPaise) }, { label: 'Expenses', value: pdfMoney(report.expensePaise) }, { label: 'Outstanding', value: pdfMoney(report.outstandingPaise) }, { label: report.netLabel, value: pdfMoney(report.netPaise) }, { label: 'Active subscribers', value: String(report.activeSubscribers) }, { label: 'Subscriber records needing setup', value: String(report.dataQualityCount) }, ...report.payments.map((payment) => ({ label: payment.paymentCode, value: `${formatBusinessDate(payment.paymentDate)} | ${payment.customerName} | Received ${pdfMoney(payment.amountReceivedPaise)} | Discount ${pdfMoney(payment.discountGivenPaise)} | ${payment.paymentMode}` })), ...report.expenses.map((expense) => ({ label: `Expense ${expense.category}`, value: `${formatBusinessDate(expense.expenseDate)} | ${expense.description} | ${pdfMoney(expense.amountPaise)}` }))]
+  saveBytes(`sitaram-report-${report.from}-${report.to}.pdf`, await createPdfBytes('BUSINESS REPORT', report.scope.toUpperCase(), rows, settings))
 }
 
 export function downloadReportExcel(report: Report) {
   const escape = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const rows = [['Type', 'Code / Category', 'Name / Description', 'Date', 'Mode', 'Amount'], ...report.payments.map((p) => ['Collection', p.paymentCode, p.customerName, p.paymentDate, p.paymentMode, (p.amountReceivedPaise / 100).toFixed(2)]), ...report.expenses.map((e) => ['Expense', e.category, e.description, e.expenseDate, '', (e.amountPaise / 100).toFixed(2)])]
+  const rows = [['Type', 'Code / Category', 'Name / Description', 'Date', 'Mode', 'Amount', 'Discount'], ['Summary', 'Billed', '', report.from + ' to ' + report.to, '', (report.billedPaise / 100).toFixed(2), ''], ['Summary', 'Collected', '', '', '', (report.collectedPaise / 100).toFixed(2), ''], ['Summary', 'Discount given', '', '', '', '', (report.discountGivenPaise / 100).toFixed(2)], ['Summary', 'Expenses', '', '', '', (report.expensePaise / 100).toFixed(2), ''], ['Summary', 'Outstanding', '', '', '', (report.outstandingPaise / 100).toFixed(2), ''], ['Summary', report.netLabel, '', '', '', (report.netPaise / 100).toFixed(2), ''], ['Summary', 'Active subscribers', String(report.activeSubscribers), '', '', '', ''], ['Summary', 'Records needing setup', String(report.dataQualityCount), '', '', '', ''], ...report.payments.map((p) => ['Collection', p.paymentCode, p.customerName, p.paymentDate, p.paymentMode, (p.amountReceivedPaise / 100).toFixed(2), (p.discountGivenPaise / 100).toFixed(2)]), ...report.expenses.map((e) => ['Expense', e.category, e.description, e.expenseDate, '', (e.amountPaise / 100).toFixed(2), ''])]
   const xml = `<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Report"><Table>${rows.map((row) => `<Row>${row.map((cell) => `<Cell><Data ss:Type="String">${escape(cell)}</Data></Cell>`).join('')}</Row>`).join('')}</Table></Worksheet></Workbook>`
   const url = URL.createObjectURL(new Blob([xml], { type: 'application/vnd.ms-excel' })); Object.assign(document.createElement('a'), { href: url, download: `sitaram-report-${report.from}-${report.to}.xls` }).click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

@@ -5,10 +5,11 @@ import { methodNotAllowed, sendError } from '../_lib/http'
 import { requireSession } from '../_lib/session'
 import { body } from '../_lib/validation'
 
-const settingsSchema = z.object({ businessName: z.string().trim().min(1).max(160), address: z.string().trim().min(1).max(500), phoneNumbers: z.string().trim().min(1).max(120), upiId: z.string().trim().min(1).max(160), logoUrl: z.string().url().nullable().optional() })
+const logoUrlSchema = z.string().url().refine((value) => /^https:\/\//i.test(value), 'Logo URL must use HTTPS.')
+const settingsSchema = z.object({ businessName: z.string().trim().min(1).max(160), address: z.string().trim().min(1).max(500), phoneNumbers: z.string().trim().min(1).max(120), upiId: z.string().trim().min(1).max(160), logoUrl: logoUrlSchema.nullable().optional() })
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
-  if (!requireSession(request, response)) return
+  if (!await requireSession(request, response)) return
   try {
     const db = database()
     if (request.method === 'GET') {
