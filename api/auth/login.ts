@@ -25,7 +25,8 @@ export default async function handler(request: VercelRequest, response: VercelRe
       return sendError(response, 401, 'Invalid username or password. Check both fields and try again.')
     }
     await database().execute({ sql: 'DELETE FROM login_attempts WHERE attempt_key = ?', args: [key] })
-    setSession(response, String(admin.username))
+    await database().execute({ sql: 'DELETE FROM admin_sessions WHERE expires_at <= ?', args: [now] })
+    await setSession(response, String(admin.username))
     return response.status(200).json({ username: String(admin.username) })
   } catch (error) {
     if (error instanceof z.ZodError) return sendError(response, 400, 'Enter a valid username and password.')

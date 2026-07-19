@@ -1,7 +1,8 @@
+import { existsSync } from 'node:fs'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
-if (process.env.NODE_ENV !== 'production') process.loadEnvFile?.('.env.local')
+if (process.env.NODE_ENV !== 'production' && existsSync('.env.local')) process.loadEnvFile('.env.local')
 
 function localApi(): Plugin {
   const routes: Record<string, string> = {

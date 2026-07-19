@@ -9,7 +9,7 @@ const createAreaSchema = z.object({ serviceType: serviceTypeSchema, displayName:
 const updateAreaSchema = createAreaSchema.extend({ id: z.number().int().positive() })
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
-  if (!requireSession(request, response)) return
+  if (!await requireSession(request, response)) return
   try {
     if (request.method === 'GET') {
       const serviceType = serviceTypeSchema.parse(request.query.serviceType)

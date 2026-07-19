@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowRightLeft, BarChart3, Bell, ChevronLeft, ChevronRight, CircleDollarSign, Command, DatabaseZap, FileText, HardDriveDownload, LayoutDashboard, LogOut, Menu, Moon, Package, Search, Settings, ShieldCheck, Sun, Users, Wallet, X } from 'lucide-react'
 import { apiHealth, currentAdmin, login, logout } from './lib/api'
@@ -13,14 +13,17 @@ type Page = typeof navigation[number][0]
 const pageSlugs = Object.fromEntries(navigation.map(([page]) => [page, page.toLowerCase().replace(' ', '-')])) as Record<Page, string>
 
 function pageFromHash(): Page {
-  const slug = window.location.hash.replace(/^#\/?/, '')
+  const slug = window.location.hash.replace(/^#\/?/, '').split('?')[0]
   return navigation.find(([page]) => pageSlugs[page] === slug)?.[0] ?? 'Dashboard'
 }
+
+function serviceFromHash(): ServiceType { const value = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('service'); return value === 'broadband' || value === 'cable' ? value : localStorage.getItem('sitaram-service') === 'broadband' ? 'broadband' : 'cable' }
+function pageHref(page: Page, service: ServiceType) { return `#/${pageSlugs[page]}?service=${service}` }
 
 function App() {
   const [username, setUsername] = useState<string | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
-  const [service, setService] = useState<ServiceType>('cable')
+  const [service, setService] = useState<ServiceType>(serviceFromHash)
   const [menuOpen, setMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sitaram-sidebar') === 'collapsed')
   const [commandOpen, setCommandOpen] = useState(false)
@@ -32,19 +35,22 @@ function App() {
     currentAdmin().then((admin) => setUsername(admin.username)).catch(() => setUsername(null)).finally(() => setAuthLoading(false))
     apiHealth().then(setDbState)
   }, [])
-  useEffect(() => { const syncPage = () => setPage(pageFromHash()); window.addEventListener('hashchange', syncPage); return () => window.removeEventListener('hashchange', syncPage) }, [])
-  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('sitaram-theme', theme) }, [theme])
+  useEffect(() => { const syncPage = () => { setPage(pageFromHash()); setService(serviceFromHash()) }; window.addEventListener('hashchange', syncPage); return () => window.removeEventListener('hashchange', syncPage) }, [])
+  useEffect(() => { document.getElementById('main-content')?.focus() }, [page])
+  useEffect(() => { document.documentElement.dataset.theme = theme; document.documentElement.style.colorScheme = theme; localStorage.setItem('sitaram-theme', theme) }, [theme])
+  useEffect(() => { localStorage.setItem('sitaram-service', service); if (new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('service') !== service) history.replaceState(null, '', pageHref(page, service)) }, [page, service])
+  useEffect(() => { const unauthorized = () => setUsername(null); window.addEventListener('sitaram:unauthorized', unauthorized); return () => window.removeEventListener('sitaram:unauthorized', unauthorized) }, [])
   useEffect(() => { localStorage.setItem('sitaram-sidebar', sidebarCollapsed ? 'collapsed' : 'expanded') }, [sidebarCollapsed])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommandOpen((open) => !open) }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); if (!document.querySelector('[aria-modal="true"]')) setCommandOpen((open) => !open) }
       if (event.key === 'Escape') { setCommandOpen(false); setMenuOpen(false) }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  const navigateTo = (nextPage: Page) => { setPage(nextPage); setMenuOpen(false); window.location.hash = `/${pageSlugs[nextPage]}` }
+  const navigateTo = (nextPage: Page) => { setPage(nextPage); setMenuOpen(false); window.location.hash = pageHref(nextPage, service).slice(1) }
   const signOut = () => void logout().finally(() => setUsername(null))
   if (authLoading) return <LoadingWorkspace />
   if (!username) return <LoginScreen onSuccess={setUsername} />
@@ -57,18 +63,18 @@ function App() {
     <aside className={menuOpen ? 'sidebar sidebar-open' : 'sidebar'}>
       <div className="sidebar-header">
         <div className="brand"><span className="brand-logo"><img src="/logo.png" width="32" height="32" alt="Sitaram Cable & Broadband" /></span><span className="brand-copy">SITARAM <small>Cable & Broadband</small></span></div>
-        <button className="service-mode" aria-label={`Switch to ${service === 'cable' ? 'Broadband' : 'Cable'} mode`} onClick={() => setService(service === 'cable' ? 'broadband' : 'cable')} title={`${serviceName} workspace`}><span><i className={service} /> <b>{serviceName.toUpperCase()}</b></span><ArrowRightLeft size={14} aria-hidden="true" /></button>
+        <button className="service-mode" aria-label={`Switch to ${service === 'cable' ? 'Broadband' : 'Cable'} mode`} onClick={() => { const next = service === 'cable' ? 'broadband' : 'cable'; setService(next); history.replaceState(null, '', pageHref(page, next)) }} title={`${serviceName} workspace`}><span><i className={service} /> <b>{serviceName.toUpperCase()}</b></span><ArrowRightLeft size={14} aria-hidden="true" /></button>
       </div>
-      <nav aria-label="Primary navigation">{navigationGroups.map((group) => <section className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map(([label, Icon]) => <button className={page === label ? 'nav-item active' : 'nav-item'} aria-current={page === label ? 'page' : undefined} title={sidebarCollapsed ? label : undefined} key={label} onClick={() => navigateTo(label)}><Icon size={17} aria-hidden="true" /><span>{label}</span></button>)}</section>)}</nav>
+      <nav aria-label="Primary navigation">{navigationGroups.map((group) => <section className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map(([label, Icon]) => <a className={page === label ? 'nav-item active' : 'nav-item'} aria-current={page === label ? 'page' : undefined} title={sidebarCollapsed ? label : undefined} href={pageHref(label, service)} key={label} onClick={() => setMenuOpen(false)}><Icon size={17} aria-hidden="true" /><span>{label}</span></a>)}</section>)}</nav>
       <div className={`database-state ${dbState.status}`} title={connected ? `${dbState.storage} database connected` : 'Database connection unavailable'}><span className="database-dot" /><span><strong>{serviceName.toUpperCase()} DB</strong><small>{connected ? (dbState.storage === 'cloud' ? 'Securely synced' : 'Local storage connected') : 'Connection unavailable'}</small></span><DatabaseZap size={15} aria-hidden="true" /></div>
     </aside>
 
-    <main id="main-content">
+    <main id="main-content" tabIndex={-1}>
       <header className="app-topbar">
         <div className="topbar-start"><button className="sidebar-trigger desktop-only" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>{sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}</button><button className="sidebar-trigger mobile-only" onClick={() => setMenuOpen(true)} aria-label="Open navigation" aria-expanded={menuOpen}><Menu size={19} /></button><div className="breadcrumbs"><span>{serviceName} Workspace</span><i>/</i><strong>{page}</strong></div></div>
-        <div className="topbar-actions"><button className="command-trigger" onClick={() => setCommandOpen(true)}><Search size={15} aria-hidden="true" /><span>Search anything…</span><kbd>Ctrl K</kbd></button><span className={`connection-pill ${connected ? 'connected' : ''}`}><i />{connected ? 'Connected' : 'Offline'}</span><button className="topbar-icon" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} theme`}>{theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="user-chip" onClick={signOut} aria-label={`Sign out ${username}`}><span>{username.slice(0, 1).toUpperCase()}</span><span><strong>{username}</strong><small>Administrator</small></span><LogOut size={15} /></button></div>
+        <div className="topbar-actions"><button className="command-trigger" onClick={() => { if (!document.querySelector('[aria-modal="true"]')) setCommandOpen(true) }}><Search size={15} aria-hidden="true" /><span>Search anything…</span><kbd>Ctrl K</kbd></button><span className={`connection-pill ${connected ? 'connected' : ''}`}><i />{connected ? 'Connected' : 'Offline'}</span><button className="topbar-icon" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} theme`}>{theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="user-chip" onClick={signOut} aria-label={`Sign out ${username}`}><span>{username.slice(0, 1).toUpperCase()}</span><span><strong>{username}</strong><small>Administrator</small></span><LogOut size={15} /></button></div>
       </header>
-      <div className="workspace-content">{page === 'Dashboard' ? <DashboardPage serviceType={service} onNavigate={navigateTo} /> : page === 'Plans' ? <PlansPage serviceType={service} /> : page === 'Subscribers' ? <CustomersPage serviceType={service} /> : page === 'Invoices' ? <InvoicesPage serviceType={service} /> : page === 'Payments' ? <PaymentsPage serviceType={service} /> : page === 'Reports' ? <ReportsPage serviceType={service} /> : page === 'Expenses' ? <ExpensesPage /> : page === 'Reminders' ? <RemindersPage /> : page === 'Manual Backup' ? <BackupPage /> : <SettingsPage />}</div>
+      <div className="workspace-content">{page === 'Dashboard' ? <DashboardPage serviceType={service} onNavigate={navigateTo} /> : page === 'Plans' ? <PlansPage serviceType={service} /> : page === 'Subscribers' ? <CustomersPage serviceType={service} /> : page === 'Invoices' ? <InvoicesPage serviceType={service} /> : page === 'Payments' ? <PaymentsPage serviceType={service} /> : page === 'Reports' ? <ReportsPage serviceType={service} /> : page === 'Expenses' ? <ExpensesPage /> : page === 'Reminders' ? <RemindersPage serviceType={service} /> : page === 'Manual Backup' ? <BackupPage /> : <SettingsPage />}</div>
     </main>
     {commandOpen ? <CommandPalette page={page} onNavigate={(nextPage) => { navigateTo(nextPage); setCommandOpen(false) }} onClose={() => setCommandOpen(false)} /> : null}
   </div>
@@ -76,8 +82,11 @@ function App() {
 
 function CommandPalette({ page, onNavigate, onClose }: { page: Page; onNavigate: (page: Page) => void; onClose: () => void }) {
   const [query, setQuery] = useState('')
+  const dialog = useRef<HTMLElement>(null); const input = useRef<HTMLInputElement>(null)
   const results = useMemo(() => navigation.filter(([label]) => label.toLowerCase().includes(query.trim().toLowerCase())), [query])
-  return <div className="command-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="command-dialog" role="dialog" aria-modal="true" aria-labelledby="command-title"><div className="command-search"><Search size={19} aria-hidden="true" /><label className="sr-only" htmlFor="command-input" id="command-title">Search workspace</label><input id="command-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search pages and actions…" autoComplete="off" autoFocus /><button onClick={onClose} aria-label="Close search"><X size={17} /></button></div><div className="command-results"><p>Navigate</p>{results.map(([label, Icon]) => <button className={page === label ? 'selected' : ''} key={label} onClick={() => onNavigate(label)}><span><Icon size={17} /><span><strong>{label}</strong><small>Open {label.toLowerCase()} workspace</small></span></span><kbd>Enter</kbd></button>)}{results.length === 0 ? <div className="command-empty"><Search size={24} /><span>No matching pages</span></div> : null}</div><footer><span><kbd>Tab</kbd> Navigate</span><span><kbd>Esc</kbd> Close</span></footer></section></div>
+  useEffect(() => { const previous = document.activeElement as HTMLElement | null; if (matchMedia('(min-width: 621px)').matches) input.current?.focus(); return () => previous?.focus() }, [])
+  function handleKey(event: React.KeyboardEvent) { if (event.key === 'Escape') return onClose(); if (event.key !== 'Tab') return; const items = [...(dialog.current?.querySelectorAll<HTMLElement>('button, input, [tabindex]:not([tabindex="-1"])') ?? [])].filter((item) => !item.hasAttribute('disabled')); const first = items[0]; const last = items.at(-1); if (!first || !last) return; if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() } }
+  return <div className="command-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section ref={dialog} className="command-dialog" role="dialog" aria-modal="true" aria-labelledby="command-title" onKeyDown={handleKey}><div className="command-search"><Search size={19} aria-hidden="true" /><label className="sr-only" htmlFor="command-input" id="command-title">Search workspace</label><input ref={input} id="command-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search pages and actions…" autoComplete="off" /><button onClick={onClose} aria-label="Close search"><X size={17} /></button></div><div className="command-results"><p>Navigate</p>{results.map(([label, Icon]) => <button className={page === label ? 'selected' : ''} key={label} onClick={() => onNavigate(label)}><span><Icon size={17} /><span><strong>{label}</strong><small>Open {label.toLowerCase()} workspace</small></span></span><kbd>Enter</kbd></button>)}{results.length === 0 ? <div className="command-empty"><Search size={24} /><span>No matching pages</span></div> : null}</div><footer><span><kbd>Tab</kbd> Navigate</span><span><kbd>Esc</kbd> Close</span></footer></section></div>
 }
 
 function LoadingWorkspace() { return <div className="loading-screen"><div className="loading-brand"><span className="brand-logo"><img src="/logo.png" width="32" height="32" alt="" /></span><span><strong>Preparing workspace</strong><small>Loading secure billing data…</small></span></div><div className="loading-track"><i /></div></div> }

@@ -10,3 +10,9 @@ export function rupeesToPaise(value: string): number {
 export function formatRupees(paise: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(paise / 100)
 }
+
+export function paymentAmountAfterDiscount(duePaise: number, discountValue: string): string {
+  const normalized = discountValue.trim()
+  const discountPaise = /^\d+(?:\.\d{0,2})?$/.test(normalized) ? Math.round(Number(normalized) * 100) : 0
+  return (Math.max(0, duePaise - discountPaise) / 100).toFixed(2)
+}
