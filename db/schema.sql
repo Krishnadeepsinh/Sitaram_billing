@@ -215,6 +215,21 @@ CREATE TABLE IF NOT EXISTS payment_allocations (
   CHECK (amount_cash_paise + amount_discount_paise + amount_credit_paise > 0)
 );
 
+CREATE TABLE IF NOT EXISTS payment_charge_allocations (
+  id INTEGER PRIMARY KEY,
+  payment_allocation_id INTEGER NOT NULL REFERENCES payment_allocations(id),
+  invoice_charge_id INTEGER NOT NULL REFERENCES invoice_charges(id),
+  amount_cash_paise INTEGER NOT NULL DEFAULT 0 CHECK (amount_cash_paise >= 0),
+  amount_discount_paise INTEGER NOT NULL DEFAULT 0 CHECK (amount_discount_paise >= 0),
+  amount_credit_paise INTEGER NOT NULL DEFAULT 0 CHECK (amount_credit_paise >= 0),
+  is_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_deleted IN (0, 1)),
+  CHECK (amount_cash_paise + amount_discount_paise + amount_credit_paise > 0),
+  UNIQUE (payment_allocation_id, invoice_charge_id)
+);
+
+CREATE INDEX IF NOT EXISTS payment_charge_allocations_charge_index
+  ON payment_charge_allocations(invoice_charge_id);
+
 CREATE TABLE IF NOT EXISTS expenses (
   id INTEGER PRIMARY KEY,
   description TEXT NOT NULL CHECK (length(trim(description)) > 0),

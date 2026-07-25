@@ -1,5 +1,7 @@
 import { addBillingDays, endOfCalendarMonth, parseStrictDate } from './date'
 
+const dueMonth = new Intl.DateTimeFormat('en-IN', { month: 'short', year: '2-digit', timeZone: 'UTC' })
+
 export const MAX_BILLING_CYCLES = 24
 export const MAX_MONEY_PAISE = 1_000_000_000_000
 
@@ -40,6 +42,31 @@ export function billingMonthsThrough(nextBillingStartDate: string, throughMonth:
   const [sy, sm, sd] = start.split('-').map(Number)
   const days = Math.floor((Date.parse(`${monthEnd}T00:00:00Z`) - Date.UTC(sy, sm - 1, sd)) / 86_400_000) + 1
   return Math.max(0, Math.floor(days / 30))
+}
+
+export function customerDueLabel(
+  due: {
+    previousDuePaise: number
+    currentPlanDuePaise: number
+    futurePlanDuePaise: number
+    duePlanPeriodStart?: string | null
+    duePlanCycleEndStart?: string | null
+  },
+) {
+  const labels: string[] = []
+  if (due.previousDuePaise > 0) labels.push('Prev Due')
+  if (due.currentPlanDuePaise > 0 || due.futurePlanDuePaise > 0) {
+    labels.push(duePlanPeriodLabel(due.duePlanPeriodStart, due.duePlanCycleEndStart))
+  }
+  return labels.length ? labels.join(' + ') : 'No pending invoice'
+}
+
+export function duePlanPeriodLabel(start?: string | null, lastCycleStart?: string | null) {
+  if (!start) return 'Plan Due'
+  const first = dueMonth.format(new Date(`${parseStrictDate(start)}T00:00:00Z`)).toUpperCase()
+  if (!lastCycleStart) return first
+  const last = dueMonth.format(new Date(`${parseStrictDate(lastCycleStart)}T00:00:00Z`)).toUpperCase()
+  return first === last ? first : `${first} - ${last}`
 }
 
 export function allocateOldestFirst(

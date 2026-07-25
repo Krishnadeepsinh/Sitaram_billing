@@ -17,10 +17,14 @@ const checks = {
     FROM invoices i JOIN invoice_charges c ON c.invoice_id = i.id WHERE i.is_deleted = 0 GROUP BY i.id HAVING settled > charge)`,
   duplicateRequestKeys: `SELECT COUNT(*) count FROM (SELECT service_type, request_key FROM payments
     WHERE request_key IS NOT NULL GROUP BY service_type, request_key HAVING COUNT(*) > 1)`,
-  billingPositionDrift: `SELECT COUNT(*) count FROM customers c WHERE c.installation_date IS NOT NULL
-    AND c.next_billing_start_date <> MAX(c.installation_date,
-      COALESCE((SELECT MAX(effective_date) FROM customer_status_history h WHERE h.customer_id = c.id AND h.status = 'active'), c.installation_date),
-      COALESCE(date((SELECT MAX(period_end) FROM invoices i WHERE i.customer_id = c.id AND i.is_deleted = 0 AND i.is_merged = 0), '+1 day'), c.installation_date))`,
+  billingPositionDrift: `SELECT COUNT(*) count FROM customers c WHERE c.installation_date IS NOT NULL AND (
+    ((SELECT MAX(period_end) FROM invoices i WHERE i.customer_id = c.id AND i.is_deleted = 0 AND i.is_merged = 0) IS NOT NULL
+      AND c.next_billing_start_date <> MAX(c.installation_date,
+        COALESCE((SELECT MAX(effective_date) FROM customer_status_history h WHERE h.customer_id = c.id AND h.status = 'active'), c.installation_date),
+        date((SELECT MAX(period_end) FROM invoices i WHERE i.customer_id = c.id AND i.is_deleted = 0 AND i.is_merged = 0), '+1 day')))
+    OR ((SELECT MAX(period_end) FROM invoices i WHERE i.customer_id = c.id AND i.is_deleted = 0 AND i.is_merged = 0) IS NULL
+      AND c.next_billing_start_date < MAX(c.installation_date,
+        COALESCE((SELECT MAX(effective_date) FROM customer_status_history h WHERE h.customer_id = c.id AND h.status = 'active'), c.installation_date))))`,
 }
 const results = {}
 for (const [name, sql] of Object.entries(checks)) results[name] = Number((await db.execute(sql)).rows[0].count)

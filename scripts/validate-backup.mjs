@@ -24,5 +24,10 @@ for (const row of backup.data.invoice_charges) if (!invoices.has(Number(row.invo
 for (const row of backup.data.payment_allocations) {
   if (!payments.has(Number(row.payment_id)) || !invoices.has(Number(row.invoice_id))) throw new Error(`Payment allocation ${row.id} has a broken reference.`)
 }
+if (backup.data.payment_charge_allocations) {
+  const allocations = new Set(backup.data.payment_allocations.map((row) => Number(row.id)))
+  const charges = new Set(backup.data.invoice_charges.map((row) => Number(row.id)))
+  for (const row of backup.data.payment_charge_allocations) if (!allocations.has(Number(row.payment_allocation_id)) || !charges.has(Number(row.invoice_charge_id))) throw new Error(`Payment charge allocation ${row.id} has a broken reference.`)
+}
 
 console.log(`Backup is valid: ${requiredTables.length} tables, ${backup.data.customers.length} customers, ${backup.data.invoices.length} invoices, ${backup.data.payments.length} payments.`)

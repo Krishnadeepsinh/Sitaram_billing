@@ -65,7 +65,10 @@ async function cleanup(settings, sequences) {
       const invoiceIds = invoiceRows.rows.map((row) => Number(row.id))
       const paymentRows = await transaction.execute({ sql: `SELECT id FROM payments WHERE customer_id IN (${customerMarks})`, args: created.customers })
       const paymentIds = paymentRows.rows.map((row) => Number(row.id))
-      if (paymentIds.length) await transaction.execute({ sql: `DELETE FROM payment_allocations WHERE payment_id IN (${paymentIds.map(() => '?').join(',')})`, args: paymentIds })
+      if (paymentIds.length) {
+        await transaction.execute({ sql: `DELETE FROM payment_charge_allocations WHERE payment_allocation_id IN (SELECT id FROM payment_allocations WHERE payment_id IN (${paymentIds.map(() => '?').join(',')}))`, args: paymentIds })
+        await transaction.execute({ sql: `DELETE FROM payment_allocations WHERE payment_id IN (${paymentIds.map(() => '?').join(',')})`, args: paymentIds })
+      }
       if (invoiceIds.length) {
         const invoiceMarks = invoiceIds.map(() => '?').join(',')
         await transaction.execute({ sql: `DELETE FROM invoice_merge_items WHERE merged_invoice_id IN (${invoiceMarks}) OR source_invoice_id IN (${invoiceMarks})`, args: [...invoiceIds, ...invoiceIds] })
@@ -162,7 +165,7 @@ try {
   pass(afterDiscount.data.items[0].status === 'paid' && afterDiscount.data.items[0].balancePaise === 0, '₹350 cash plus ₹50 discount fully settles the ₹400 invoice')
   const discountCustomerState = (await api(`/api/customers?serviceType=cable&query=${encodeURIComponent(discountCustomer.customerCode)}`)).data[0]
   pass(discountCustomerState.creditBalancePaise === 0, 'discount creates no customer advance credit')
-  const paymentReplay = await api('/api/payments', { method: 'POST', body: { serviceType: 'cable', customerId: discountCustomer.id, paymentDate: today, amountReceivedPaise: 35000, discountGivenPaise: 5000, paymentMode: 'cash', requestKey: `${run}-discount-payment` } })
+  const paymentReplay = await api('/api/payments', { method: 'POST', body: { serviceType: 'cable', customerId: discountCustomer.id, paymentDate: today, amountReceivedPaise: 35000, discountGivenPaise: 5000, paymentMode: 'cash', notes: 'QA discount settlement', requestKey: `${run}-discount-payment` } })
   pass(paymentReplay.data.paymentCode === discountPayment.data.paymentCode && paymentReplay.data.replayed === true, 'duplicate payment request key is idempotent')
   pass((await api('/api/payments', { method: 'POST', expected: [400], body: { serviceType: 'cable', customerId: discountCustomer.id, paymentDate: today, amountReceivedPaise: 0, discountGivenPaise: 30001, paymentMode: 'cash', requestKey: `${run}-excess-discount` } })).status === 400, 'discount greater than remaining due is blocked')
   pass((await api('/api/payments', { method: 'POST', expected: [400], body: { serviceType: 'cable', customerId: discountCustomer.id, paymentDate: addDays(today, 1), amountReceivedPaise: 100, discountGivenPaise: 0, paymentMode: 'upi', requestKey: `${run}-future-payment` } })).status === 400, 'future-dated payment is blocked')
@@ -181,10 +184,9 @@ try {
 
   const invoicePreview = await api(`/api/invoices?serviceType=cable&deletePreview=${invoice.id}`)
   pass(invoicePreview.data.payments.some((item) => item.paymentCode === replacementPayment.data.paymentCode), 'invoice deletion preview identifies linked payment')
-  pass((await api(`/api/invoices?serviceType=cable&id=${invoice.id}&reason=QA%20invalid%20invoice`, { method: 'DELETE', expected: [409] })).status === 409, 'older renewal cannot be deleted before the latest renewal')
+  pass((await api(`/api/invoices?serviceType=cable&id=${invoice.id}&reason=QA%20historical%20correction`, { method: 'DELETE', expected: [204] })).status === 204, 'historical invoice can be deleted with an audit reason and shared payments remain safe')
   const latestInvoiceRow = (await api(`/api/invoices?serviceType=cable&query=${encodeURIComponent(secondInvoice.data.invoiceCode)}`)).data.items[0]
   await api(`/api/invoices?serviceType=cable&id=${latestInvoiceRow.id}&reason=QA%20remove%20latest`, { method: 'DELETE', expected: [204] })
-  await api(`/api/invoices?serviceType=cable&id=${invoice.id}&reason=QA%20remove%20paid`, { method: 'DELETE', expected: [204] })
   pass((await api(`/api/payments?serviceType=cable&query=${encodeURIComponent(replacementPayment.data.paymentCode)}`)).data.total === 0, 'deleting paid invoice also deletes its linked payment')
 
   const concurrentBody = { serviceType: 'cable', customerId: concurrencyCustomer.id, monthsBilled: 1, expectedPeriodStart: today }
@@ -198,6 +200,8 @@ try {
   const futureStart = addDays(today, 20)
   const futureInvoice = await api('/api/invoices', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: futureCustomer.id, monthsBilled: 1, expectedPeriodStart: futureStart } })
   pass(futureInvoice.data.periodStart === futureStart, 'future customer bills from installation date')
+  const futureState = (await api(`/api/customers?serviceType=cable&query=${encodeURIComponent(futureCustomer.customerCode)}`)).data[0]
+  pass(futureState.previousDuePaise === 0 && futureState.currentPlanDuePaise === 0 && futureState.futurePlanDuePaise === 20000 && futureState.amountDuePaise === 20000, 'future renewal is isolated in the next/future due bucket')
 
   const historicalStart = addDays(today, -120)
   const historicalInvoice = await api('/api/invoices', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: historicalCustomer.id, monthsBilled: 1, expectedPeriodStart: historicalStart, periodStart: historicalStart, billingMode: 'historical', historicalReason: 'QA missed historical cycle' } })
@@ -208,18 +212,26 @@ try {
   await api('/api/invoices', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: historicalCustomer.id, monthsBilled: 1, expectedPeriodStart: gapStart, periodStart: gapStart, billingMode: 'historical', historicalReason: 'QA intentional unbilled gap test' } })
   const historicalState = (await api(`/api/customers?serviceType=cable&query=${encodeURIComponent(historicalCustomer.customerCode)}`)).data[0]
   pass(historicalState.hasHistoricalGap === 1, 'historical gap is detected and surfaced')
+  pass(historicalState.previousDuePaise === historicalState.amountDuePaise && historicalState.currentPlanDuePaise === 0 && historicalState.futurePlanDuePaise === 0, 'expired unpaid historical charges are isolated in previous due')
 
   const ledgerCustomer = await customer('LEDGER', { openingBalancePaise: 10000, openingBalanceType: 'due' })
+  const ledgerOpeningState = (await api(`/api/customers?serviceType=cable&query=${encodeURIComponent(ledgerCustomer.customerCode)}`)).data[0]
+  pass(ledgerOpeningState.previousDuePaise === 10000 && ledgerOpeningState.currentPlanDuePaise === 0 && ledgerOpeningState.futurePlanDuePaise === 0 && ledgerOpeningState.unbilledOpeningDuePaise === 10000, 'uninvoiced opening balance is immediately visible as previous due')
+  const ledgerPreview = await api(`/api/invoices?serviceType=cable&previewCustomerId=${ledgerCustomer.id}&monthsBilled=1&periodStart=${today}&billingMode=normal`)
+  pass(ledgerPreview.data.previousDuePaise === 10000 && ledgerPreview.data.currentChargePaise === 20000 && ledgerPreview.data.totalPayablePaise === 30000, 'invoice preview separates previous due, current charge, and total payable')
   const ledgerFirst = await api('/api/invoices', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: ledgerCustomer.id, monthsBilled: 1, expectedPeriodStart: today } })
   const ledgerFirstRow = (await api(`/api/invoices?serviceType=cable&query=${encodeURIComponent(ledgerFirst.data.invoiceCode)}`)).data.items[0]
   pass(ledgerFirstRow.balancePaise === 30000 && ledgerFirstRow.totalPayablePaise === 30000, 'opening due is charged on the first invoice exactly once')
   const ledgerSecond = await api('/api/invoices', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: ledgerCustomer.id, monthsBilled: 1, expectedPeriodStart: addDays(today, 30) } })
   const ledgerSecondRow = (await api(`/api/invoices?serviceType=cable&query=${encodeURIComponent(ledgerSecond.data.invoiceCode)}`)).data.items[0]
   pass(ledgerSecondRow.balancePaise === 20000 && ledgerSecondRow.totalPayablePaise === 50000, 'later invoice shows prior due without duplicating it into ledger balance')
+  const ledgerBucketState = (await api(`/api/customers?serviceType=cable&query=${encodeURIComponent(ledgerCustomer.customerCode)}`)).data[0]
+  pass(ledgerBucketState.previousDuePaise === 10000 && ledgerBucketState.currentPlanDuePaise === 20000 && ledgerBucketState.futurePlanDuePaise === 20000 && ledgerBucketState.amountDuePaise === 50000, 'opening, current, and future dues add exactly to total outstanding')
   const ledgerPayment = await api('/api/payments', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: ledgerCustomer.id, paymentDate: today, amountReceivedPaise: 35000, discountGivenPaise: 0, paymentMode: 'cash', requestKey: `${run}-oldest-first` } })
   const ledgerPaymentRow = (await api(`/api/payments?serviceType=cable&query=${encodeURIComponent(ledgerPayment.data.paymentCode)}`)).data.items[0]
   const ledgerPaymentDetail = await api(`/api/payments?serviceType=cable&id=${ledgerPaymentRow.id}`)
-  pass(ledgerPaymentDetail.data.allocations.length === 2 && ledgerPaymentDetail.data.allocations[0].invoiceCode === ledgerFirst.data.invoiceCode && ledgerPaymentDetail.data.allocations[0].cashPaise === 30000 && ledgerPaymentDetail.data.allocations[1].cashPaise === 5000, 'one payment allocates oldest invoice first across multiple invoices')
+  const ledgerAllocationTotals = Object.groupBy(ledgerPaymentDetail.data.allocations, (item) => item.invoiceCode)
+  pass(Object.values(ledgerAllocationTotals).length === 2 && ledgerAllocationTotals[ledgerFirst.data.invoiceCode].reduce((sum, item) => sum + item.cashPaise, 0) === 30000 && ledgerAllocationTotals[ledgerSecond.data.invoiceCode].reduce((sum, item) => sum + item.cashPaise, 0) === 5000, 'one payment allocates oldest invoice first across multiple invoices')
   const ledgerAfter = await api(`/api/invoices?serviceType=cable&query=${encodeURIComponent(ledgerCustomer.customerCode)}`)
   pass(ledgerAfter.data.items.find((item) => item.invoiceCode === ledgerFirst.data.invoiceCode).status === 'paid' && ledgerAfter.data.items.find((item) => item.invoiceCode === ledgerSecond.data.invoiceCode).balancePaise === 15000, 'oldest invoice is paid and newer invoice remains partial')
   await api('/api/payments', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: ledgerCustomer.id, paymentDate: today, amountReceivedPaise: 20000, discountGivenPaise: 0, paymentMode: 'upi', requestKey: `${run}-overpayment-credit` } })
@@ -229,6 +241,15 @@ try {
   const ledgerThirdRow = (await api(`/api/invoices?serviceType=cable&query=${encodeURIComponent(ledgerThird.data.invoiceCode)}`)).data.items[0]
   ledgerState = (await api(`/api/customers?serviceType=cable&query=${encodeURIComponent(ledgerCustomer.customerCode)}`)).data[0]
   pass(ledgerThirdRow.status === 'partial' && ledgerThirdRow.balancePaise === 15000 && ledgerState.creditBalancePaise === 0, 'advance credit automatically applies to the next invoice')
+
+  const prepaidOpeningCustomer = await customer('PRE-INVOICE-PAYMENT', { openingBalancePaise: 100000, openingBalanceType: 'due' })
+  await api('/api/payments', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: prepaidOpeningCustomer.id, paymentDate: today, amountReceivedPaise: 30000, discountGivenPaise: 0, paymentMode: 'cash', requestKey: `${run}-preinvoice-opening-payment` } })
+  let prepaidOpeningState = (await api(`/api/customers?serviceType=cable&query=${encodeURIComponent(prepaidOpeningCustomer.customerCode)}`)).data[0]
+  pass(prepaidOpeningState.amountDuePaise === 100000 && prepaidOpeningState.creditBalancePaise === 30000 && prepaidOpeningState.unbilledOpeningDuePaise === 100000, 'cash collected before first invoice is held as explicit advance against the uninvoiced opening due')
+  pass((await api('/api/payments', { method: 'POST', expected: [400], body: { serviceType: 'cable', customerId: prepaidOpeningCustomer.id, paymentDate: today, amountReceivedPaise: 0, discountGivenPaise: 1000, paymentMode: 'cash', requestKey: `${run}-preinvoice-opening-discount` } })).status === 400, 'discount against uninvoiced opening due is blocked with no credit creation')
+  await api('/api/invoices', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: prepaidOpeningCustomer.id, monthsBilled: 1, expectedPeriodStart: today } })
+  prepaidOpeningState = (await api(`/api/customers?serviceType=cable&query=${encodeURIComponent(prepaidOpeningCustomer.customerCode)}`)).data[0]
+  pass(prepaidOpeningState.previousDuePaise === 70000 && prepaidOpeningState.currentPlanDuePaise === 20000 && prepaidOpeningState.futurePlanDuePaise === 0 && prepaidOpeningState.amountDuePaise === 90000 && prepaidOpeningState.creditBalancePaise === 0, 'first invoice consumes prepayment and exposes ₹700 previous plus ₹200 current due')
 
   const mergeCustomer = await customer('MERGE')
   const mergeOne = await api('/api/invoices', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: mergeCustomer.id, monthsBilled: 1, expectedPeriodStart: today } })
@@ -259,7 +280,7 @@ try {
   pass(cascadePreview.data.affectedInvoices.some((item) => item.invoiceCode === cascadeOne.data.invoiceCode), 'invoice deletion preview warns when one payment also affects another invoice')
   await api(`/api/invoices?serviceType=cable&id=${cascadeLatest.id}&reason=QA%20cascade%20deletion`, { method: 'DELETE', expected: [204] })
   const cascadeFirstAfter = (await api(`/api/invoices?serviceType=cable&query=${encodeURIComponent(cascadeOne.data.invoiceCode)}`)).data.items[0]
-  pass(cascadeFirstAfter.status === 'unpaid' && (await api(`/api/payments?serviceType=cable&query=${encodeURIComponent(cascadePayment.data.paymentCode)}`)).data.total === 0, 'deleting invoice removes shared payment and correctly reopens other affected invoice')
+  pass(cascadeFirstAfter.status === 'paid' && (await api(`/api/payments?serviceType=cable&query=${encodeURIComponent(cascadePayment.data.paymentCode)}`)).data.total === 1, 'deleting one invoice preserves a shared payment and reallocates it to the remaining invoice')
 
   const archivedCustomer = await customer('ARCHIVED')
   const archivedFirst = await api('/api/invoices', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: archivedCustomer.id, monthsBilled: 1, expectedPeriodStart: today } })
@@ -269,7 +290,7 @@ try {
   observe(archivedPayment.status !== 201, 'archived subscriber rejects new payment entry', `HTTP ${archivedPayment.status} created ${archivedPayment.data?.paymentCode || 'a payment'}`)
   const archivedRows = (await api(`/api/invoices?serviceType=cable&query=${encodeURIComponent(archivedCustomer.customerCode)}`)).data.items
   pass((await api('/api/invoices/merge', { method: 'POST', expected: [409], body: { serviceType: 'cable', invoiceIds: [archivedRows.find((item) => item.invoiceCode === archivedFirst.data.invoiceCode).id, archivedRows.find((item) => item.invoiceCode === archivedSecond.data.invoiceCode).id] } })).status === 409, 'archived subscriber rejects merged invoice entry')
-  pass((await api('/api/invoices', { method: 'POST', expected: [400], body: { serviceType: 'cable', customerId: archivedCustomer.id, monthsBilled: 1, expectedPeriodStart: addDays(today, 60) } })).status === 400, 'archived subscriber rejects new invoice entry')
+  pass((await api('/api/invoices', { method: 'POST', expected: [409], body: { serviceType: 'cable', customerId: archivedCustomer.id, monthsBilled: 1, expectedPeriodStart: addDays(today, 60) } })).status === 409, 'archived subscriber rejects new invoice entry')
 
   const inactiveCustomer = await customer('INACTIVE')
   await api('/api/invoices', { method: 'POST', expected: [201], body: { serviceType: 'cable', customerId: inactiveCustomer.id, monthsBilled: 1, expectedPeriodStart: today } })

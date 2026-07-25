@@ -15,19 +15,27 @@ export type CreateInvoiceInput = {
   monthsBilled: number
   expectedPeriodStart: string
   periodStart?: string
+  issuedDate?: string
   billingMode?: 'normal' | 'historical'
   historicalReason?: string
 }
 
 export async function createInvoiceInTransaction(transaction: Transaction, input: CreateInvoiceInput) {
   if (!Number.isInteger(input.monthsBilled) || input.monthsBilled < 1 || input.monthsBilled > MAX_BILLING_CYCLES) throw new InvoiceRequestError(400, `Choose between 1 and ${MAX_BILLING_CYCLES} 30-day cycles.`)
+  // Keep archived customers in the lookup so we can return a conflict (rather
+  // than the generic setup error) when an admin tries to issue a new invoice.
+  // Archived records are intentionally retained for financial history.
   const customer = await transaction.execute({ sql: `SELECT customers.*, areas.display_name AS area_name, plans.name AS plan_name, plans.price_paise, plans.is_active AS plan_is_active
     FROM customers JOIN areas ON areas.id = customers.area_id LEFT JOIN plans ON plans.id = customers.plan_id
-    WHERE customers.id = ? AND customers.service_type = ? AND customers.is_deleted = 0`, args: [input.customerId, input.serviceType] })
+    WHERE customers.id = ? AND customers.service_type = ?`, args: [input.customerId, input.serviceType] })
   const row = customer.rows[0]
+  if (row && Number(row.is_deleted) === 1) throw new InvoiceRequestError(409, 'Archived subscribers cannot receive invoices. Restore the subscriber first.')
   if (!row || !row.installation_date || !row.next_billing_start_date) throw new InvoiceRequestError(400, 'Complete the customer installation and billing setup before invoicing.')
 
   const billingMode = input.billingMode ?? 'normal'
+  const issuedDate = parseStrictDate(input.issuedDate ?? todayInBusinessTimezone())
+  const today = todayInBusinessTimezone()
+  if (issuedDate > today) throw new InvoiceRequestError(400, 'Invoice date cannot be in the future.')
   const expectedPeriodStart = parseStrictDate(input.expectedPeriodStart)
   const currentNextStart = parseStrictDate(String(row.next_billing_start_date))
   const requestedStart = parseStrictDate(input.periodStart ?? expectedPeriodStart)
@@ -47,7 +55,7 @@ export async function createInvoiceInTransaction(transaction: Transaction, input
     const reason = input.historicalReason?.trim()
     if (!reason || reason.length < 5) throw new InvoiceRequestError(400, 'Enter a clear reason for the historical invoice.')
     if (period.periodStart < String(row.installation_date)) throw new InvoiceRequestError(400, `Historical billing cannot start before installation on ${row.installation_date}.`)
-    if (period.periodEnd > todayInBusinessTimezone()) throw new InvoiceRequestError(400, 'Historical invoices must end today or earlier. Use Normal Renewal for current or future coverage.')
+    if (period.periodEnd > today) throw new InvoiceRequestError(400, 'Historical invoices must end today or earlier. Use Normal Renewal for current or future coverage.')
     const status = await transaction.execute({ sql: `SELECT status FROM customer_status_history WHERE customer_id = ? AND effective_date <= ? ORDER BY effective_date DESC, id DESC LIMIT 1`, args: [input.customerId, period.periodStart] })
     const inactiveTransition = await transaction.execute({ sql: `SELECT id FROM customer_status_history WHERE customer_id = ? AND status = 'inactive' AND effective_date > ? AND effective_date <= ? LIMIT 1`, args: [input.customerId, period.periodStart, period.periodEnd] })
     if (status.rows[0]?.status !== 'active' || inactiveTransition.rows[0]) throw new InvoiceRequestError(409, 'This period includes inactive service. Choose an active uncovered period.')
@@ -91,7 +99,7 @@ export async function createInvoiceInTransaction(transaction: Transaction, input
   const sequence = await transaction.execute({ sql: 'INSERT INTO id_sequences (entity_type, service_type, last_number) VALUES (?, ?, 1) ON CONFLICT(entity_type, service_type) DO UPDATE SET last_number = last_number + 1 RETURNING last_number', args: ['invoice', input.serviceType] })
   const invoiceCode = `INV-${String(sequence.rows[0].last_number).padStart(3, '0')}`
   const inserted = await transaction.execute({ sql: `INSERT INTO invoices (invoice_code, customer_id, service_type, customer_name_snapshot, area_id_snapshot, area_name_snapshot, plan_name_snapshot, stb_number_snapshot, period_start, period_end, issued_date, months_billed, current_period_amount_paise, previous_due_snapshot_paise, total_payable_paise, due_date, status, billing_mode, historical_reason, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, args: [invoiceCode, input.customerId, input.serviceType, row.name, row.area_id, row.area_name, planName, row.stb_number, period.periodStart, period.periodEnd, todayInBusinessTimezone(), input.monthsBilled, serviceAmount, previousDue, serviceAmount + previousDue, period.dueDate, serviceAmount + previousDue === 0 ? 'paid' : 'unpaid', billingMode, input.historicalReason?.trim() ?? null, now] })
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, args: [invoiceCode, input.customerId, input.serviceType, row.name, row.area_id, row.area_name, planName, row.stb_number, period.periodStart, period.periodEnd, issuedDate, input.monthsBilled, serviceAmount, previousDue, serviceAmount + previousDue, period.dueDate, serviceAmount + previousDue === 0 ? 'paid' : 'unpaid', billingMode, input.historicalReason?.trim() ?? null, now] })
   const invoiceId = Number(inserted.rows[0].id)
   await transaction.execute({ sql: "INSERT INTO invoice_charges (invoice_id, charge_type, description, amount_paise) VALUES (?, 'service', ?, ?)", args: [invoiceId, `${planName} service charge`, serviceAmount] })
   if (openingDue) await transaction.execute({ sql: "INSERT INTO invoice_charges (invoice_id, charge_type, description, amount_paise) VALUES (?, 'opening_due', 'Opening balance due', ?)", args: [invoiceId, openingDue] })
@@ -103,6 +111,6 @@ export async function createInvoiceInTransaction(transaction: Transaction, input
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'system_credit', 'Automatic credit application', 'settled', ?)`, args: [paymentCode, input.customerId, input.serviceType, row.customer_code, row.name, row.area_id, row.area_name, row.stb_number, todayInBusinessTimezone(), now] })
     await rebuildCustomerLedger(transaction, input.customerId)
   }
-  await recordAudit(transaction, { entityType: 'invoice', entityId: invoiceId, action: billingMode === 'historical' ? 'historical_invoice_created' : 'invoice_created', reason: input.historicalReason, details: { invoiceCode, planId, planName, periodStart: period.periodStart, periodEnd: period.periodEnd, serviceAmount } })
+  await recordAudit(transaction, { entityType: 'invoice', entityId: invoiceId, action: billingMode === 'historical' ? 'historical_invoice_created' : 'invoice_created', reason: input.historicalReason, details: { invoiceCode, planId, planName, issuedDate, periodStart: period.periodStart, periodEnd: period.periodEnd, serviceAmount } })
   return { invoiceId, invoiceCode, periodStart: period.periodStart, periodEnd: period.periodEnd, nextEligibleDate: position.nextBillingStartDate, replayed: false }
 }

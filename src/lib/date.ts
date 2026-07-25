@@ -62,3 +62,9 @@ export function formatBusinessDate(value: string): string {
 export function formatBusinessMonth(value: string): string {
   return displayMonth.format(new Date(`${parseStrictDate(value)}T00:00:00Z`))
 }
+
+export function billingCyclePosition(periodStart: string, periodEnd: string, today = todayInBusinessTimezone()): 'Previous cycle' | 'Current cycle' | 'Next / future cycle' {
+  if (parseStrictDate(periodEnd) < today) return 'Previous cycle'
+  if (parseStrictDate(periodStart) <= today) return 'Current cycle'
+  return 'Next / future cycle'
+}

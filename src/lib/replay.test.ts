@@ -8,7 +8,7 @@ describe('ledger replay', () => {
       { id: 2, periodStart: '2026-01-31', amountPaise: 30000 },
     ]
     const result = replayLedger(0, invoices, [{ id: 2, amountReceivedPaise: 30000, discountGivenPaise: 0, paymentMode: 'cash' }])
-    expect(result.allocations).toEqual([{ paymentId: 2, invoiceId: 1, cashPaise: 30000, discountPaise: 0, creditPaise: 0 }])
+    expect(result.allocations).toEqual([{ paymentId: 2, invoiceId: 1, cashPaise: 30000, discountPaise: 0, creditPaise: 0, chargeAllocations: [] }])
     expect(result.invoiceStatuses).toEqual([{ invoiceId: 1, status: 'paid' }, { invoiceId: 2, status: 'unpaid' }])
   })
 
@@ -27,9 +27,27 @@ describe('ledger replay', () => {
       { id: 2, amountReceivedPaise: 0, discountGivenPaise: 0, paymentMode: 'system_credit', createdAt: '2026-02-01T00:00:00.000Z' },
     ])
     expect(result.allocations).toEqual([
-      { paymentId: 1, invoiceId: 1, cashPaise: 10000, discountPaise: 0, creditPaise: 0 },
-      { paymentId: 2, invoiceId: 2, cashPaise: 0, discountPaise: 0, creditPaise: 10000 },
+      { paymentId: 1, invoiceId: 1, cashPaise: 10000, discountPaise: 0, creditPaise: 0, chargeAllocations: [] },
+      { paymentId: 2, invoiceId: 2, cashPaise: 0, discountPaise: 0, creditPaise: 10000, chargeAllocations: [] },
     ])
     expect(result.invoiceStatuses).toEqual([{ invoiceId: 1, status: 'paid' }, { invoiceId: 2, status: 'paid' }])
+  })
+
+  it('traces payments across previous due and service charges without double counting', () => {
+    const invoice = { id: 1, periodStart: '2026-01-01', amountPaise: 120000, charges: [
+      { id: 10, chargeType: 'opening_due' as const, amountPaise: 100000 },
+      { id: 11, chargeType: 'service' as const, amountPaise: 20000 },
+    ] }
+    const result = replayLedger(0, [invoice], [
+      { id: 1, amountReceivedPaise: 50000, discountGivenPaise: 0, paymentMode: 'cash' },
+      { id: 2, amountReceivedPaise: 50000, discountGivenPaise: 0, paymentMode: 'upi' },
+      { id: 3, amountReceivedPaise: 20000, discountGivenPaise: 0, paymentMode: 'cash' },
+    ])
+    expect(result.allocations.map((allocation) => allocation.chargeAllocations)).toEqual([
+      [{ chargeId: 10, cashPaise: 50000, discountPaise: 0, creditPaise: 0 }],
+      [{ chargeId: 10, cashPaise: 50000, discountPaise: 0, creditPaise: 0 }],
+      [{ chargeId: 11, cashPaise: 20000, discountPaise: 0, creditPaise: 0 }],
+    ])
+    expect(result.invoiceStatuses).toEqual([{ invoiceId: 1, status: 'paid' }])
   })
 })

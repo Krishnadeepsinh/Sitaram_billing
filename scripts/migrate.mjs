@@ -95,5 +95,72 @@ if (!applied2.rows[0]) {
     transaction.close()
   }
 }
+const applied3 = await client.execute('SELECT version FROM schema_migrations WHERE version = 3')
+if (!applied3.rows[0]) {
+  const transaction = await client.transaction('write')
+  try {
+    const orphanedOpeningDues = await transaction.execute(`SELECT invoice_charges.id AS chargeId, invoice_charges.amount_paise AS amountPaise,
+      (SELECT live.id FROM invoices live WHERE live.customer_id = deleted.customer_id AND live.is_deleted = 0 AND live.is_merged = 0 ORDER BY live.period_start, live.id LIMIT 1) AS targetInvoiceId
+      FROM invoice_charges JOIN invoices deleted ON deleted.id = invoice_charges.invoice_id
+      WHERE invoice_charges.charge_type = 'opening_due' AND deleted.is_deleted = 1
+      AND NOT EXISTS (SELECT 1 FROM invoices live JOIN invoice_charges live_charge ON live_charge.invoice_id = live.id
+        WHERE live.customer_id = deleted.customer_id AND live.is_deleted = 0 AND live.is_merged = 0 AND live_charge.charge_type = 'opening_due')`)
+    for (const row of orphanedOpeningDues.rows) {
+      if (!row.targetInvoiceId) continue
+      await transaction.execute({ sql: 'UPDATE invoice_charges SET invoice_id = ? WHERE id = ?', args: [row.targetInvoiceId, row.chargeId] })
+      await transaction.execute({ sql: 'UPDATE invoices SET previous_due_snapshot_paise = ?, total_payable_paise = current_period_amount_paise + ? WHERE id = ?', args: [row.amountPaise, row.amountPaise, row.targetInvoiceId] })
+    }
+    await transaction.execute({ sql: 'INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?)', args: [new Date().toISOString()] })
+    await transaction.commit()
+  } catch (error) {
+    await transaction.rollback()
+    throw error
+  } finally {
+    transaction.close()
+  }
+}
+const applied4 = await client.execute('SELECT version FROM schema_migrations WHERE version = 4')
+if (!applied4.rows[0]) {
+  const transaction = await client.transaction('write')
+  try {
+    await transaction.execute(`CREATE TABLE IF NOT EXISTS payment_charge_allocations (
+      id INTEGER PRIMARY KEY,
+      payment_allocation_id INTEGER NOT NULL REFERENCES payment_allocations(id),
+      invoice_charge_id INTEGER NOT NULL REFERENCES invoice_charges(id),
+      amount_cash_paise INTEGER NOT NULL DEFAULT 0 CHECK (amount_cash_paise >= 0),
+      amount_discount_paise INTEGER NOT NULL DEFAULT 0 CHECK (amount_discount_paise >= 0),
+      amount_credit_paise INTEGER NOT NULL DEFAULT 0 CHECK (amount_credit_paise >= 0),
+      is_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_deleted IN (0, 1)),
+      CHECK (amount_cash_paise + amount_discount_paise + amount_credit_paise > 0),
+      UNIQUE (payment_allocation_id, invoice_charge_id)
+    )`)
+    const existing = await transaction.execute(`SELECT payment_allocations.id AS allocationId, payment_allocations.amount_cash_paise AS cashPaise,
+      payment_allocations.amount_discount_paise AS discountPaise, payment_allocations.amount_credit_paise AS creditPaise,
+      payment_allocations.invoice_id AS invoiceId
+      FROM payment_allocations JOIN payments ON payments.id = payment_allocations.payment_id
+      WHERE payment_allocations.is_deleted = 0 AND payments.is_deleted = 0`)
+    for (const row of existing.rows) {
+      const charges = await transaction.execute({ sql: `SELECT id, charge_type AS chargeType, amount_paise AS amountPaise
+        FROM invoice_charges WHERE invoice_id = ? ORDER BY CASE charge_type WHEN 'opening_due' THEN 0 ELSE 1 END, id`, args: [row.invoiceId] })
+      let cash = Number(row.cashPaise); let discount = Number(row.discountPaise); let credit = Number(row.creditPaise)
+      for (const charge of charges.rows) {
+        const remaining = Math.max(0, Number(charge.amountPaise))
+        const chargeCash = Math.min(cash, remaining); cash -= chargeCash
+        const chargeDiscount = Math.min(discount, Math.max(0, remaining - chargeCash)); discount -= chargeDiscount
+        const chargeCredit = Math.min(credit, Math.max(0, remaining - chargeCash - chargeDiscount)); credit -= chargeCredit
+        if (chargeCash + chargeDiscount + chargeCredit > 0) await transaction.execute({ sql: `INSERT OR IGNORE INTO payment_charge_allocations
+          (payment_allocation_id, invoice_charge_id, amount_cash_paise, amount_discount_paise, amount_credit_paise) VALUES (?, ?, ?, ?, ?)`,
+          args: [row.allocationId, charge.id, chargeCash, chargeDiscount, chargeCredit] })
+      }
+    }
+    await transaction.execute({ sql: 'INSERT INTO schema_migrations (version, applied_at) VALUES (4, ?)', args: [new Date().toISOString()] })
+    await transaction.commit()
+  } catch (error) {
+    await transaction.rollback()
+    throw error
+  } finally {
+    transaction.close()
+  }
+}
 await client.close()
 console.log('Database schema applied successfully.')

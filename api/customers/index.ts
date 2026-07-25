@@ -26,8 +26,24 @@ const updateCustomerSchema = z.object({
   phone: z.string().trim().max(30).nullable().optional(), stbNumber: z.string().trim().max(80).nullable().optional(), planId: z.number().int().positive().nullable().optional(),
   installationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), status: z.enum(['active', 'inactive']), restartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), statusReason: z.string().trim().max(250).optional(),
 })
-const restoreCustomerSchema = z.object({ id: z.number().int().positive(), serviceType: serviceTypeSchema, reason: z.string().trim().min(5).max(250) })
+const restoreCustomerSchema = z.object({ id: z.number().int().positive(), serviceType: serviceTypeSchema, reason: z.string().trim().max(250).optional() })
 class CustomerRequestError extends Error { constructor(public status: number, message: string) { super(message) } }
+
+function customerValidationMessage(error: z.ZodError) {
+  switch (String(error.issues[0]?.path[0] ?? '')) {
+    case 'name': return 'Enter a subscriber name; spaces alone are not valid.'
+    case 'areaId': return 'Select a valid service area.'
+    case 'phone': return 'Phone number must be 30 characters or fewer.'
+    case 'stbNumber': return 'STB number must be 80 characters or fewer.'
+    case 'planId': return 'Select a valid plan or choose No plan yet.'
+    case 'installationDate': return 'Choose a valid installation date.'
+    case 'openingBalancePaise': return 'Enter a valid non-negative opening balance.'
+    case 'openingBalanceType': return 'Choose Due or Advance for the opening balance.'
+    case 'restartDate': return 'Choose a valid restart date.'
+    case 'statusReason': return 'Change reason must be 250 characters or fewer.'
+    default: return 'Check the highlighted subscriber fields and try again.'
+  }
+}
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   if (!await requireSession(request, response)) return
@@ -36,13 +52,23 @@ export default async function handler(request: VercelRequest, response: VercelRe
       const serviceType = serviceTypeSchema.parse(request.query.serviceType)
       const includeDeleted = request.query.includeDeleted === '1'
       const query = typeof request.query.query === 'string' ? `%${request.query.query.trim()}%` : '%'
+      const unbilledOpeningDue = `CASE WHEN customers.opening_balance_type = 'due'
+        AND NOT EXISTS (SELECT 1 FROM invoices opening_invoice JOIN invoice_charges opening_charge ON opening_charge.invoice_id = opening_invoice.id
+          WHERE opening_invoice.customer_id = customers.id AND opening_invoice.is_deleted = 0 AND opening_invoice.is_merged = 0 AND opening_charge.charge_type = 'opening_due')
+        THEN customers.opening_balance_paise ELSE 0 END`
       const result = await database().execute({
-        sql: `SELECT customers.id, customers.customer_code AS customerCode, customers.name, customers.phone,
+        sql: `SELECT customers.id, customers.sort_order AS sortOrder, customers.customer_code AS customerCode, customers.name, customers.phone,
           customers.stb_number AS stbNumber, customers.status, customers.next_billing_start_date AS nextBillingStartDate,
           customers.installation_date AS installationDate, customers.area_id AS areaId, customers.plan_id AS planId,
           customers.credit_balance_paise AS creditBalancePaise, areas.display_name AS areaName, plans.name AS planName, plans.price_paise AS planPricePaise, COALESCE(plans.is_active, 0) AS planIsActive,
-          COALESCE(debt.amountDuePaise, 0) AS amountDuePaise, COALESCE(debt.openInvoiceCount, 0) AS openInvoiceCount,
-          debt.oldestDuePeriodStart, debt.latestDuePeriodEnd, coverage.latestPeriodStart, coverage.latestPeriodEnd,
+          COALESCE(debt.amountDuePaise, 0) + ${unbilledOpeningDue} AS amountDuePaise,
+          COALESCE(debt.previousDuePaise, 0) + ${unbilledOpeningDue} AS previousDuePaise,
+          COALESCE(debt.currentPlanDuePaise, 0) AS currentPlanDuePaise,
+          COALESCE(debt.futurePlanDuePaise, 0) AS futurePlanDuePaise,
+          ${unbilledOpeningDue} AS unbilledOpeningDuePaise,
+          COALESCE(debt.openInvoiceCount, 0) AS openInvoiceCount,
+          debt.oldestDuePeriodStart, debt.latestDuePeriodEnd, debt.duePlanPeriodStart, debt.duePlanCycleEndStart,
+          coverage.latestPeriodStart, coverage.latestPeriodEnd,
           CASE WHEN coverage.latestPeriodEnd IS NULL THEN 'never_billed'
             WHEN coverage.currentlyCovered = 1 THEN CASE WHEN coverage.latestPeriodEnd = ? THEN 'expiring_today' ELSE 'active' END
             WHEN coverage.latestPeriodStart > ? THEN 'future' WHEN coverage.latestPeriodEnd < ? THEN 'expired' ELSE 'active' END AS coverageStatus,
@@ -50,16 +76,30 @@ export default async function handler(request: VercelRequest, response: VercelRe
           FROM customers JOIN areas ON areas.id = customers.area_id
           LEFT JOIN plans ON plans.id = customers.plan_id
           LEFT JOIN (
-            SELECT invoices.customer_id,
-              SUM(CASE WHEN charges.total > COALESCE(allocated.total, 0) THEN charges.total - COALESCE(allocated.total, 0) ELSE 0 END) AS amountDuePaise,
-              SUM(CASE WHEN charges.total > COALESCE(allocated.total, 0) THEN 1 ELSE 0 END) AS openInvoiceCount,
-              MIN(CASE WHEN charges.total > COALESCE(allocated.total, 0) THEN invoices.period_start END) AS oldestDuePeriodStart,
-              MAX(CASE WHEN charges.total > COALESCE(allocated.total, 0) THEN invoices.period_end END) AS latestDuePeriodEnd
-            FROM invoices
-            JOIN (SELECT invoice_id, SUM(amount_paise) AS total FROM invoice_charges GROUP BY invoice_id) charges ON charges.invoice_id = invoices.id
-            LEFT JOIN (SELECT invoice_id, SUM(amount_cash_paise + amount_discount_paise + amount_credit_paise) AS total FROM payment_allocations WHERE is_deleted = 0 GROUP BY invoice_id) allocated ON allocated.invoice_id = invoices.id
-            WHERE invoices.is_deleted = 0 AND invoices.is_merged = 0
-            GROUP BY invoices.customer_id
+            SELECT balances.customer_id,
+              SUM(balances.remaining) AS amountDuePaise,
+              SUM(balances.openingRemaining + CASE WHEN balances.periodEnd < ? THEN balances.serviceRemaining ELSE 0 END) AS previousDuePaise,
+              SUM(CASE WHEN balances.periodStart <= ? AND balances.periodEnd >= ? THEN balances.serviceRemaining ELSE 0 END) AS currentPlanDuePaise,
+              SUM(CASE WHEN balances.periodStart > ? THEN balances.serviceRemaining ELSE 0 END) AS futurePlanDuePaise,
+              SUM(CASE WHEN balances.remaining > 0 THEN 1 ELSE 0 END) AS openInvoiceCount,
+              MIN(CASE WHEN balances.remaining > 0 THEN balances.periodStart END) AS oldestDuePeriodStart,
+              MAX(CASE WHEN balances.remaining > 0 THEN balances.periodEnd END) AS latestDuePeriodEnd,
+              MIN(CASE WHEN balances.serviceRemaining > 0 AND balances.periodEnd >= ? THEN balances.periodStart END) AS duePlanPeriodStart,
+              MAX(CASE WHEN balances.serviceRemaining > 0 AND balances.periodEnd >= ?
+                THEN date(balances.periodStart, '+' || ((balances.monthsBilled - 1) * 30) || ' days') END) AS duePlanCycleEndStart
+            FROM (
+              SELECT invoices.customer_id, invoices.period_start AS periodStart, invoices.period_end AS periodEnd,
+                invoices.months_billed AS monthsBilled,
+                MAX(charges.total - COALESCE(allocated.total, 0), 0) AS remaining,
+                MAX(charges.opening - COALESCE(allocated.total, 0), 0) AS openingRemaining,
+                MAX(charges.total - COALESCE(allocated.total, 0), 0) - MAX(charges.opening - COALESCE(allocated.total, 0), 0) AS serviceRemaining
+              FROM invoices
+              JOIN (SELECT invoice_id, SUM(amount_paise) AS total,
+                SUM(CASE WHEN charge_type = 'opening_due' THEN amount_paise ELSE 0 END) AS opening
+                FROM invoice_charges GROUP BY invoice_id) charges ON charges.invoice_id = invoices.id
+              LEFT JOIN (SELECT invoice_id, SUM(amount_cash_paise + amount_discount_paise + amount_credit_paise) AS total FROM payment_allocations WHERE is_deleted = 0 GROUP BY invoice_id) allocated ON allocated.invoice_id = invoices.id
+              WHERE invoices.is_deleted = 0 AND invoices.is_merged = 0
+            ) balances GROUP BY balances.customer_id
           ) debt ON debt.customer_id = customers.id
           LEFT JOIN (
             SELECT ranked.customer_id,
@@ -75,7 +115,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
           WHERE customers.service_type = ? AND customers.is_deleted = ${includeDeleted ? '1' : '0'}
           AND (customers.name LIKE ? OR customers.customer_code LIKE ? OR COALESCE(customers.stb_number, '') LIKE ? OR COALESCE(customers.phone, '') LIKE ? OR areas.display_name LIKE ?)
           ORDER BY customers.sort_order`,
-        args: [todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), serviceType, query, query, query, query, query],
+        args: [todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), serviceType, query, query, query, query, query],
       })
       return response.status(200).json(result.rows)
     }
@@ -131,15 +171,43 @@ export default async function handler(request: VercelRequest, response: VercelRe
         const customer = await transaction.execute({ sql: 'SELECT id FROM customers WHERE id = ? AND service_type = ? AND is_deleted = 1', args: [input.id, input.serviceType] })
         if (!customer.rows[0]) throw new CustomerRequestError(404, 'Archived customer not found.')
         await transaction.execute({ sql: 'UPDATE customers SET is_deleted = 0 WHERE id = ?', args: [input.id] })
-        await recordAudit(transaction, { entityType: 'customer', entityId: input.id, action: 'customer_restored', reason: input.reason })
+        await recordAudit(transaction, { entityType: 'customer', entityId: input.id, action: 'customer_restored', reason: input.reason?.trim() || 'Restored by administrator' })
       })
       return response.status(204).end()
     }
     if (request.method === 'DELETE') {
       const serviceType = serviceTypeSchema.parse(request.query.serviceType)
       const id = z.coerce.number().int().positive().parse(request.query.id)
-      const reason = z.string().trim().min(5).max(250).parse(request.query.reason)
+      const reasonValue = typeof request.query.reason === 'string' ? request.query.reason.trim() : ''
+      const reason = reasonValue.length >= 5 ? reasonValue.slice(0, 250) : 'Archived by administrator'
       await withWriteTransaction(async (transaction) => {
+        if (request.query.permanent === '1') {
+          const customer = await transaction.execute({ sql: 'SELECT id, name, is_deleted FROM customers WHERE id = ? AND service_type = ?', args: [id, serviceType] })
+          if (!customer.rows[0]) throw new CustomerRequestError(404, 'Customer not found.')
+          if (Number(customer.rows[0].is_deleted) !== 1) throw new CustomerRequestError(409, 'Only archived customers can be permanently deleted.')
+          const financial = await transaction.execute({ sql: `SELECT
+            (SELECT COUNT(*) FROM invoices WHERE customer_id = ? AND is_deleted = 0) AS activeInvoices,
+            (SELECT COUNT(*) FROM payments WHERE customer_id = ? AND is_deleted = 0) AS activePayments`, args: [id, id] })
+          if (Number(financial.rows[0].activeInvoices) > 0 || Number(financial.rows[0].activePayments) > 0) throw new CustomerRequestError(409, 'This archived customer has active billing history. Reverse payments and remove active invoices first; opening balance only can be deleted.')
+          await recordAudit(transaction, { entityType: 'customer', entityId: id, action: 'customer_permanently_deleted', reason, details: { customerCode: customer.rows[0].id, customerName: customer.rows[0].name } })
+          const deletedPayments = await transaction.execute({ sql: 'SELECT id FROM payments WHERE customer_id = ? AND is_deleted = 1', args: [id] })
+          if (deletedPayments.rows.length) {
+            const placeholders = deletedPayments.rows.map(() => '?').join(',')
+            await transaction.execute({ sql: `DELETE FROM payment_charge_allocations WHERE payment_allocation_id IN (SELECT id FROM payment_allocations WHERE payment_id IN (${placeholders}))`, args: deletedPayments.rows.map((row) => row.id) })
+            await transaction.execute({ sql: `DELETE FROM payment_allocations WHERE payment_id IN (${placeholders})`, args: deletedPayments.rows.map((row) => row.id) })
+            await transaction.execute({ sql: `DELETE FROM payments WHERE id IN (${placeholders})`, args: deletedPayments.rows.map((row) => row.id) })
+          }
+          const deletedInvoices = await transaction.execute({ sql: 'SELECT id FROM invoices WHERE customer_id = ? AND is_deleted = 1', args: [id] })
+          if (deletedInvoices.rows.length) {
+            const placeholders = deletedInvoices.rows.map(() => '?').join(',')
+            await transaction.execute({ sql: `DELETE FROM invoice_merge_items WHERE merged_invoice_id IN (${placeholders}) OR source_invoice_id IN (${placeholders})`, args: [...deletedInvoices.rows.map((row) => row.id), ...deletedInvoices.rows.map((row) => row.id)] })
+            await transaction.execute({ sql: `DELETE FROM invoice_charges WHERE invoice_id IN (${placeholders})`, args: deletedInvoices.rows.map((row) => row.id) })
+            await transaction.execute({ sql: `DELETE FROM invoices WHERE id IN (${placeholders})`, args: deletedInvoices.rows.map((row) => row.id) })
+          }
+          for (const table of ['customer_status_history', 'customer_plan_history', 'customer_plan_gaps'] as const) await transaction.execute({ sql: `DELETE FROM ${table} WHERE customer_id = ?`, args: [id] })
+          await transaction.execute({ sql: 'DELETE FROM customers WHERE id = ? AND service_type = ? AND is_deleted = 1', args: [id, serviceType] })
+          return
+        }
         const result = await transaction.execute({ sql: 'UPDATE customers SET is_deleted = 1 WHERE id = ? AND service_type = ? AND is_deleted = 0', args: [id, serviceType] })
         if (!result.rowsAffected) throw new CustomerRequestError(404, 'Customer not found.')
         await recordAudit(transaction, { entityType: 'customer', entityId: id, action: 'customer_archived', reason })
@@ -180,7 +248,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
     return response.status(201).json(created)
   } catch (error) {
     if (error instanceof CustomerRequestError) return sendError(response, error.status, error.message)
-    if (error instanceof z.ZodError || error instanceof DateInputError) return sendError(response, 400, error instanceof DateInputError ? error.message : 'Provide valid customer details.')
+    if (error instanceof z.ZodError || error instanceof DateInputError) return sendError(response, 400, error instanceof DateInputError ? error.message : customerValidationMessage(error))
     if (error instanceof Error && error.message === 'AREA_INVALID') return sendError(response, 400, 'Choose an active area for this service.')
     if (error instanceof Error && error.message === 'PLAN_INVALID') return sendError(response, 400, 'Choose an active plan for this service.')
     if (error instanceof Error && error.message === 'STB_DUPLICATE') return sendError(response, 409, 'That active STB number is already assigned.')

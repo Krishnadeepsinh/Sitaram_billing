@@ -11,6 +11,7 @@ import {
   Banknote,
   CalendarDays,
   Download,
+  Eye,
   FilePlus2,
   FileText,
   HardDriveDownload,
@@ -42,6 +43,9 @@ import {
   getReport,
   getSettings,
   listAreas,
+  listAllInvoices,
+  listAllPayments,
+  listAuditEvents,
   listCustomers,
   listExpenses,
   listInvoices,
@@ -59,10 +63,12 @@ import type {
   Payment,
   PaymentDeletePreview,
   PaymentDetail,
+  AuditEvent,
   Report,
   ServiceType,
 } from "../lib/api";
 import {
+  billingCyclePosition,
   endOfCalendarMonth,
   formatBusinessDate,
   todayInBusinessTimezone,
@@ -85,6 +91,9 @@ function currentMonthRange() {
   };
 }
 const documents = () => import("../lib/documents");
+const BACKUP_STORAGE_KEY = "sitaram:last-backup-at";
+function markBackupDownloaded() { window.localStorage.setItem(BACKUP_STORAGE_KEY, new Date().toISOString()); }
+function lastBackupLabel(value: string | null) { return value ? `Last downloaded ${new Date(value).toLocaleString()}` : "No backup downloaded from this browser yet"; }
 
 export function DashboardPage({
   serviceType,
@@ -117,12 +126,13 @@ export function DashboardPage({
   if (error) return <ErrorNotice message={error} />;
   if (!report) return <Loading label="Loading dashboard…" />;
   return (
-    <section className="page-content">
+    <section className="page-content dashboard-page">
       <h1 className="sr-only">Dashboard</h1>
       <section className="dashboard-toolbar">
         <div>
           <p className="eyebrow">Live billing control</p>
-          <h2>{serviceType === "cable" ? "Cable" : "Broadband"} performance</h2>
+          <h2>Dashboard</h2>
+          <p className="dashboard-period">{formatBusinessDate(range.from)} → {formatBusinessDate(range.to)}</p>
           <p>
             {report.dataQualityCount
               ? `${report.dataQualityCount} subscriber record(s) need billing setup.`
@@ -182,7 +192,7 @@ export function DashboardPage({
           </button>
         </div>
       </section>
-      <section className="metrics" aria-label="Business statistics">
+      <section className="metrics dashboard-metrics" aria-label="Business statistics">
         <Metric
           icon={<TrendingUp />}
           tone="orange"
@@ -346,6 +356,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [settings, setSettings] = useState<BusinessSettings>();
   const [detail, setDetail] = useState<InvoiceDetail>();
+  const [pdfPreview, setPdfPreview] = useState<{ title: string; url: string }>();
   const [query, setQuery] = useState("");
   const [showMerged, setShowMerged] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
@@ -458,22 +469,46 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
       setSubmitting(false);
     }
   }
-  function exportInvoices() {
-    downloadCsv(
-      `${serviceType}-invoices.csv`,
-      invoices.map((invoice) => ({
-        Invoice: invoice.invoiceCode,
-        Customer: invoice.customerName,
-        Issued: invoice.issuedDate,
-        Due: invoice.dueDate,
-        "Service Start": invoice.periodStart,
-        "Service Expiry": invoice.periodEnd,
-        Type: invoice.billingMode,
-        Status: invoice.status,
-        Total: (invoice.totalPayablePaise / 100).toFixed(2),
-        Balance: (invoice.balancePaise / 100).toFixed(2),
-      })),
-    );
+  async function exportInvoices() {
+    setSubmitting(true);
+    try {
+      const exported = await listAllInvoices(
+        serviceType,
+        deferredQuery,
+        showMerged,
+        filters,
+      );
+      downloadCsv(
+        `${serviceType}-invoices.csv`,
+        exported.map((invoice) => ({
+          Invoice: invoice.invoiceCode,
+          Customer: invoice.customerName,
+          Issued: invoice.issuedDate,
+          Due: invoice.dueDate,
+          "Service Start": invoice.periodStart,
+          "Service Expiry": invoice.periodEnd,
+          "Cycle Position": billingCyclePosition(invoice.periodStart, invoice.periodEnd),
+          Type: invoice.billingMode,
+          Status: invoice.status,
+          "Current Plan Charge": (invoice.currentPeriodAmountPaise / 100).toFixed(2),
+          "Previous Due At Issue": (invoice.previousDueSnapshotPaise / 100).toFixed(2),
+          "Total Payable At Issue": (invoice.totalPayablePaise / 100).toFixed(2),
+          "Live Invoice Balance": (invoice.balancePaise / 100).toFixed(2),
+        })),
+      );
+      setNotice({
+        kind: "success",
+        message: `${exported.length} matching invoice(s) exported.`,
+      });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        message:
+          error instanceof Error ? error.message : "Unable to export invoices.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
   async function mergeSelected() {
     setSubmitting(true);
@@ -532,7 +567,11 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
         subtitle="Manage 30-day service coverage, billing, and payment collections."
         action={
           <div className="page-actions">
-            <button className="secondary" onClick={exportInvoices}>
+            <button
+              className="secondary"
+              disabled={submitting}
+              onClick={() => void exportInvoices()}
+            >
               <Download size={16} /> Export
             </button>
             <button
@@ -730,11 +769,19 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                         <small>
                           to {formatBusinessDate(invoice.periodEnd)}
                         </small>
+                        <small>{billingCyclePosition(invoice.periodStart, invoice.periodEnd)}</small>
                       </td>
                       <td data-label="Balance">
-                        {formatRupees(invoice.balancePaise)}
+                        <strong
+                          className={
+                            invoice.balancePaise > 0 ? "amount-due" : ""
+                          }
+                        >
+                          {formatRupees(invoice.balancePaise)}
+                        </strong>
+                        <small>Current {formatRupees(invoice.currentPeriodAmountPaise)} · Previous at issue {formatRupees(invoice.previousDueSnapshotPaise)}</small>
                         <small>
-                          At issue {formatRupees(invoice.totalPayablePaise)}
+                          Total at issue {formatRupees(invoice.totalPayablePaise)}
                         </small>
                       </td>
                       <td data-label="Status">
@@ -786,8 +833,21 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
               <button
                 className="secondary"
                 onClick={() =>
+                  void documents().then(async ({ invoicePdfBytes, pdfPreviewUrl }) => {
+                    const url = pdfPreviewUrl(await invoicePdfBytes(detail, settings));
+                    setPdfPreview({ title: `${detail.invoiceCode} preview`, url });
+                  }).catch((cause: Error) => setNotice({ kind: "error", message: cause.message || "Could not preview the invoice PDF." }))
+                }
+              >
+                <Eye size={16} /> Preview PDF
+              </button>
+              <button
+                className="secondary"
+                onClick={() =>
                   void documents().then(({ downloadInvoice }) =>
                     downloadInvoice(detail, settings),
+                  ).catch((cause: Error) =>
+                    setNotice({ kind: "error", message: cause.message || "Could not create the invoice PDF." }),
                   )
                 }
               >
@@ -798,6 +858,8 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                 onClick={() =>
                   void documents().then(({ shareInvoice }) =>
                     shareInvoice(detail, settings),
+                  ).catch((cause: Error) =>
+                    setNotice({ kind: "error", message: cause.message || "Could not share the invoice." }),
                   )
                 }
               >
@@ -809,6 +871,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
           )}
         </Modal>
       )}
+      {pdfPreview ? <PdfPreviewModal title={pdfPreview.title} url={pdfPreview.url} onClose={() => { URL.revokeObjectURL(pdfPreview.url); setPdfPreview(undefined); }} /> : null}
       {billingDialog === "single" && (
         <Modal
           title="Generate Invoice"
@@ -943,7 +1006,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                 {!deletePreview
                   ? "Calculating the exact ledger impact…"
                   : deletePreview.payments.length
-                    ? `${deletePreview.payments.length} linked payment(s) will also be deleted and ${deletePreview.affectedInvoices.length} invoice(s) may reopen. Coverage and the next billing date will be recalculated.`
+                    ? `${deletePreview.payments.filter((payment) => payment.sharedInvoiceCount === 0).length} payment(s) will be removed; ${deletePreview.payments.filter((payment) => payment.sharedInvoiceCount > 0).length} shared payment(s) will remain and be reallocated. ${deletePreview.affectedInvoices.length} other invoice(s) may change. Coverage and the next billing date will be recalculated.`
                     : confirming.isCombined
                       ? "The combined invoice will be deleted and its original source invoices restored."
                       : "No linked payments will be deleted. Coverage and the next billing date will be recalculated."}
@@ -956,13 +1019,12 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                 </small>
               ))}
               <label>
-                Deletion Reason *
+                Deletion Reason (optional)
                 <textarea
                   value={deleteReason}
                   onChange={(event) => setDeleteReason(event.target.value)}
-                  minLength={5}
                   maxLength={250}
-                  required
+                  placeholder="Add a note only if useful for the audit history"
                 />
               </label>
             </div>
@@ -975,9 +1037,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
               </button>
               <button
                 className="primary danger-button"
-                disabled={
-                  submitting || !deletePreview || deleteReason.trim().length < 5
-                }
+                disabled={submitting || !deletePreview}
                 onClick={() => void remove(confirming)}
               >
                 {submitting ? "Deleting…" : "Delete Invoice"}
@@ -993,12 +1053,11 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
 export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
   const today = todayInBusinessTimezone();
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [deleted, setDeleted] = useState<Customer[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [settings, setSettings] = useState<BusinessSettings>();
   const [customerId, setCustomerId] = useState("");
-  const [showDeleted, setShowDeleted] = useState(false);
   const [detail, setDetail] = useState<PaymentDetail>();
+  const [pdfPreview, setPdfPreview] = useState<{ title: string; url: string }>();
   const [filters, setFilters] = useState({
     query: "",
     from: "",
@@ -1041,20 +1100,18 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
       listCustomers(serviceType),
       listPayments(serviceType, paymentRequestFilters),
       getSettings(),
-      showDeleted ? listCustomers(serviceType, "", true) : Promise.resolve([]),
     ])
-      .then(([active, nextPayments, nextSettings, removed]) => {
+      .then(([active, nextPayments, nextSettings]) => {
         setCustomers(active);
         setPayments(nextPayments.items);
         setPaymentTotal(nextPayments.total);
-        setDeleted(removed.filter((customer) => customer.amountDuePaise > 0));
         setSettings(nextSettings ?? undefined);
       })
       .catch((error: Error) =>
         setNotice({ kind: "error", message: error.message }),
       )
       .finally(() => setLoading(false));
-  }, [paymentRequestFilters, serviceType, showDeleted]);
+  }, [paymentRequestFilters, serviceType]);
   useEffect(() => {
     setPaymentOffset(0);
   }, [
@@ -1067,8 +1124,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
-  const available = [...customers, ...deleted];
-  const customer = available.find((item) => item.id === Number(customerId));
+  const customer = customers.find((item) => item.id === Number(customerId));
   const adjustedDue = customer
     ? Math.max(0, customer.amountDuePaise - customer.creditBalancePaise)
     : 0;
@@ -1157,19 +1213,40 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
       setReversing(undefined);
     }
   }
-  function exportPayments() {
-    downloadCsv(
-      `${serviceType}-payments.csv`,
-      payments.map((payment) => ({
-        Receipt: payment.paymentCode,
-        Customer: payment.customerName,
-        Date: payment.paymentDate,
-        Mode: payment.paymentMode,
-        Received: (payment.amountReceivedPaise / 100).toFixed(2),
-        Discount: (payment.discountGivenPaise / 100).toFixed(2),
-        Result: payment.resultingStatus,
-      })),
-    );
+  async function exportPayments() {
+    setSubmitting(true);
+    try {
+      const exported = await listAllPayments(serviceType, {
+        query: deferredPaymentQuery,
+        from: filters.from,
+        to: filters.to,
+        mode: filters.mode,
+      });
+      downloadCsv(
+        `${serviceType}-payments.csv`,
+        exported.map((payment) => ({
+          Receipt: payment.paymentCode,
+          Customer: payment.customerName,
+          Date: payment.paymentDate,
+          Mode: payment.paymentMode,
+          Received: (payment.amountReceivedPaise / 100).toFixed(2),
+          Discount: (payment.discountGivenPaise / 100).toFixed(2),
+          Result: payment.resultingStatus,
+        })),
+      );
+      setNotice({
+        kind: "success",
+        message: `${exported.length} matching payment(s) exported.`,
+      });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        message:
+          error instanceof Error ? error.message : "Unable to export payments.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
   return (
     <section className="page-content">
@@ -1178,7 +1255,11 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
         subtitle="Revenue collection and voucher registry."
         action={
           <div className="page-actions">
-            <button className="secondary" onClick={exportPayments}>
+            <button
+              className="secondary"
+              disabled={submitting}
+              onClick={() => void exportPayments()}
+            >
               <Download size={16} /> Export
             </button>
             <button
@@ -1348,8 +1429,21 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
               <button
                 className="secondary"
                 onClick={() =>
+                  void documents().then(async ({ pdfPreviewUrl, receiptPdfBytes }) => {
+                    const url = pdfPreviewUrl(await receiptPdfBytes(detail, settings));
+                    setPdfPreview({ title: `${detail.paymentCode} preview`, url });
+                  }).catch((cause: Error) => setNotice({ kind: "error", message: cause.message || "Could not preview the payment receipt." }))
+                }
+              >
+                <Eye size={16} /> Preview PDF
+              </button>
+              <button
+                className="secondary"
+                onClick={() =>
                   void documents().then(({ downloadReceipt }) =>
                     downloadReceipt(detail, settings),
+                  ).catch((cause: Error) =>
+                    setNotice({ kind: "error", message: cause.message || "Could not create the payment receipt." }),
                   )
                 }
               >
@@ -1360,6 +1454,8 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                 onClick={() =>
                   void documents().then(({ shareReceipt }) =>
                     shareReceipt(detail, settings),
+                  ).catch((cause: Error) =>
+                    setNotice({ kind: "error", message: cause.message || "Could not share the payment receipt." }),
                   )
                 }
               >
@@ -1371,6 +1467,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
           )}
         </Modal>
       )}
+      {pdfPreview ? <PdfPreviewModal title={pdfPreview.title} url={pdfPreview.url} onClose={() => { URL.revokeObjectURL(pdfPreview.url); setPdfPreview(undefined); }} /> : null}
       {paymentOpen && (
         <Modal title="Record Payment" onClose={() => setPaymentOpen(false)}>
           <form className="modal-form single-column" onSubmit={submit}>
@@ -1390,40 +1487,39 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                     {item.name} · {item.customerCode}
                   </option>
                 ))}
-                {deleted.length > 0 && (
-                  <optgroup label="Archived customers with history">
-                    {deleted.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name} · {item.customerCode}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
               </select>
             </label>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={showDeleted}
-                onChange={(event) => setShowDeleted(event.target.checked)}
-              />{" "}
-              Include archived customers
-            </label>
+            <p className="form-help">
+              Restore archived subscribers from Subscribers before recording a
+              payment.
+            </p>
             {customer && (
               <div className="due-summary">
                 <span>
                   Outstanding{" "}
-                  <strong>{formatRupees(customer.amountDuePaise)}</strong>
+                  <strong className="amount-due">
+                    {formatRupees(customer.amountDuePaise)}
+                  </strong>
                 </span>
                 <span>
                   Available credit{" "}
-                  <strong>{formatRupees(customer.creditBalancePaise)}</strong>
+                  <strong className="amount-credit">
+                    {formatRupees(customer.creditBalancePaise)}
+                  </strong>
                 </span>
                 <span>
-                  Cash due now <strong>{formatRupees(adjustedDue)}</strong>
+                  Cash due now{" "}
+                  <strong className={adjustedDue > 0 ? "amount-due" : ""}>
+                    {formatRupees(adjustedDue)}
+                  </strong>
                 </span>
               </div>
             )}
+            {customer && customer.unbilledOpeningDuePaise > 0 ? (
+              <p className="form-help">
+                {formatRupees(customer.unbilledOpeningDuePaise)} is an opening previous due that is not attached to an invoice yet. A Cash/UPI payment recorded now is held as advance credit and automatically applied when the first invoice is generated. Generate that invoice first if a discount is required.
+              </p>
+            ) : null}
             <div className="balance-fields">
               <label>
                 Payment Date
@@ -1464,6 +1560,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                 inputMode="decimal"
                 pattern="\d+(\.\d{1,2})?"
                 defaultValue="0"
+                disabled={Boolean(customer?.unbilledOpeningDuePaise)}
                 onChange={(event) => {
                   const amount =
                     event.currentTarget.form?.elements.namedItem("amount");
@@ -1519,13 +1616,12 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                 </small>
               ))}
               <label>
-                Reversal Reason *
+                Reversal Reason (optional)
                 <textarea
                   value={reversalReason}
                   onChange={(event) => setReversalReason(event.target.value)}
-                  minLength={5}
                   maxLength={250}
-                  required
+                  placeholder="Add a note only if useful"
                 />
               </label>
             </div>
@@ -1540,8 +1636,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                 className="primary danger-button"
                 disabled={
                   submitting ||
-                  !reversalPreview ||
-                  reversalReason.trim().length < 5
+                  !reversalPreview
                 }
                 onClick={() => void remove(reversing)}
               >
@@ -1883,6 +1978,7 @@ export function ReportsPage({ serviceType }: { serviceType: ServiceType }) {
     Array<{ id: number; displayName: string; serviceType?: ServiceType }>
   >([]);
   const [settings, setSettings] = useState<BusinessSettings>();
+  const [pdfPreview, setPdfPreview] = useState<{ title: string; url: string }>();
   const [error, setError] = useState("");
   const load = useCallback(() => {
     setReport(undefined);
@@ -2086,16 +2182,31 @@ export function ReportsPage({ serviceType }: { serviceType: ServiceType }) {
           </section>
           <div className="export-actions">
             {settings ? (
+              <>
+              <button
+                className="secondary"
+                onClick={() =>
+                  void documents().then(async ({ pdfPreviewUrl, reportPdfBytes }) => {
+                    const url = pdfPreviewUrl(await reportPdfBytes(report, settings));
+                    setPdfPreview({ title: "Business report preview", url });
+                  }).catch((cause: Error) => setError(cause.message || "Could not preview the report PDF."))
+                }
+              >
+                <Eye size={16} aria-hidden="true" /> Preview PDF
+              </button>
               <button
                 className="secondary"
                 onClick={() =>
                   void documents().then(({ downloadReportPdf }) =>
                     downloadReportPdf(report, settings),
+                  ).catch((cause: Error) =>
+                    setError(cause.message || "Could not create the report PDF."),
                   )
                 }
               >
                 <Download size={16} aria-hidden="true" /> Download PDF
               </button>
+              </>
             ) : (
               <DocumentSetupNotice serviceType={serviceType} />
             )}
@@ -2104,6 +2215,8 @@ export function ReportsPage({ serviceType }: { serviceType: ServiceType }) {
               onClick={() =>
                 void documents().then(({ downloadReportExcel }) =>
                   downloadReportExcel(report),
+                ).catch((cause: Error) =>
+                  setError(cause.message || "Could not export the report."),
                 )
               }
             >
@@ -2139,6 +2252,7 @@ export function ReportsPage({ serviceType }: { serviceType: ServiceType }) {
           </div>
         </>
       )}
+      {pdfPreview ? <PdfPreviewModal title={pdfPreview.title} url={pdfPreview.url} onClose={() => { URL.revokeObjectURL(pdfPreview.url); setPdfPreview(undefined); }} /> : null}
     </section>
   );
 }
@@ -2154,8 +2268,7 @@ export function RemindersPage({ serviceType }: { serviceType: ServiceType }) {
   }, [serviceType]);
   const actionable = customers.filter(
     (customer) =>
-      customer.phone &&
-      (customer.amountDuePaise > 0 ||
+      (customer.amountDuePaise - customer.creditBalancePaise > 0 ||
         (customer.latestPeriodEnd &&
           customer.latestPeriodEnd >= today &&
           daysBetween(today, customer.latestPeriodEnd) <= 3)),
@@ -2163,8 +2276,8 @@ export function RemindersPage({ serviceType }: { serviceType: ServiceType }) {
   function remind(customer: Customer) {
     const phone = (customer.phone ?? "").replace(/\D/g, "");
     const message =
-      customer.amountDuePaise > 0
-        ? `Hello ${customer.name}, your Sitaram ${serviceType} account has an outstanding balance of ${formatRupees(customer.amountDuePaise)}. Please contact us after payment.`
+      customer.amountDuePaise - customer.creditBalancePaise > 0
+        ? `Hello ${customer.name}, your Sitaram ${serviceType} account has an outstanding balance of ${formatRupees(customer.amountDuePaise - customer.creditBalancePaise)}. Please contact us after payment.`
         : `Hello ${customer.name}, your ${customer.planName ?? serviceType} service expires on ${formatBusinessDate(customer.latestPeriodEnd!)}. Please contact Sitaram to renew.`;
     window.open(
       `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
@@ -2211,15 +2324,15 @@ export function RemindersPage({ serviceType }: { serviceType: ServiceType }) {
                         </small>
                       </td>
                       <td data-label="Reason">
-                        {customer.amountDuePaise > 0 ? (
+                        {customer.amountDuePaise - customer.creditBalancePaise > 0 ? (
                           <>
                             <strong className="amount-due">
-                              {formatRupees(customer.amountDuePaise)} overdue
+                              {formatRupees(customer.amountDuePaise - customer.creditBalancePaise)} overdue
                             </strong>
                             <small>
                               {customer.oldestDuePeriodStart
                                 ? `From ${formatBusinessDate(customer.oldestDuePeriodStart)}`
-                                : "Open invoice balance"}
+                                : "Previous opening balance"}
                             </small>
                           </>
                         ) : (
@@ -2232,13 +2345,17 @@ export function RemindersPage({ serviceType }: { serviceType: ServiceType }) {
                           </>
                         )}
                       </td>
-                      <td data-label="Contact">{customer.phone}</td>
+                      <td data-label="Contact">
+                        {customer.phone || <span className="amount-due">Phone number required</span>}
+                      </td>
                       <td data-label="Action">
                         <button
                           className="secondary"
+                          disabled={!customer.phone}
+                          title={customer.phone ? "Open WhatsApp reminder" : "Add a phone number to the subscriber before sending a reminder"}
                           onClick={() => remind(customer)}
                         >
-                          <MessageCircle size={16} /> WhatsApp
+                          <MessageCircle size={16} /> {customer.phone ? "WhatsApp" : "Add phone first"}
                         </button>
                       </td>
                     </tr>
@@ -2273,6 +2390,9 @@ export function SettingsPage() {
   const [notice, setNotice] = useState<Notice>();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [lastBackup, setLastBackup] = useState<string | null>(() => window.localStorage.getItem(BACKUP_STORAGE_KEY));
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [auditLoading, setAuditLoading] = useState(true);
   useEffect(() => {
     getSettings()
       .then((result) => {
@@ -2283,6 +2403,7 @@ export function SettingsPage() {
       )
       .finally(() => setLoading(false));
   }, []);
+  useEffect(() => { listAuditEvents({ limit: 12 }).then((result) => setAuditEvents(result.items)).catch(() => setAuditEvents([])).finally(() => setAuditLoading(false)); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -2451,9 +2572,17 @@ export function SettingsPage() {
                 Download all operational and audit records. Password hashes are
                 excluded.
               </p>
-              <a className="secondary" href="/api/backup">
+              <p className="form-help">{lastBackupLabel(lastBackup)}</p>
+              <a className="secondary" href="/api/backup" onClick={() => { markBackupDownloaded(); setLastBackup(new Date().toISOString()); }}>
                 Download JSON backup
               </a>
+              {lastBackup && Date.now() - new Date(lastBackup).getTime() > 7 * 86400000 ? <p className="form-error" role="status">This backup is more than 7 days old. Download a fresh copy.</p> : null}
+            </div>
+            <div className="audit-box">
+              <p className="eyebrow">Accountability</p>
+              <h2>Recent audit activity</h2>
+              <p className="form-help">Corrections, deletions, payments, and billing changes are retained here.</p>
+              {auditLoading ? <p className="empty-inline">Loading audit history…</p> : auditEvents.length ? <div className="audit-list" role="list">{auditEvents.map((event) => <div className="audit-row" role="listitem" key={event.id}><span><strong>{event.action.replaceAll('_', ' ')}</strong><small>{event.entityType} #{event.entityId}{event.reason ? ` · ${event.reason}` : ''}</small></span><time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time></div>)}</div> : <p className="empty-inline">No audit activity yet.</p>}
             </div>
           </article>
         </div>
@@ -2508,8 +2637,8 @@ function InvoiceDetailView({ invoice }: { invoice: InvoiceDetail }) {
       ))}
       {invoice.allocations.map((item) => (
         <Detail
-          key={`${item.paymentCode}-${item.paymentDate}`}
-          label={item.paymentCode}
+          key={`${item.paymentCode}-${item.paymentDate}-${item.chargeType ?? "invoice"}`}
+          label={`${item.paymentCode}${item.chargeType === "opening_due" ? " · Previous due" : item.chargeType === "service" ? " · Service charge" : ""}`}
           value={`${formatBusinessDate(item.paymentDate)} · Cash ${formatRupees(item.cashPaise)} · Discount ${formatRupees(item.discountPaise)} · Credit ${formatRupees(item.creditPaise)}`}
         />
       ))}
@@ -2546,14 +2675,18 @@ function PaymentDetailView({ payment }: { payment: PaymentDetail }) {
       <Detail label="Notes" value={payment.notes || "—"} />
       {payment.allocations.map((item) => (
         <Detail
-          key={item.invoiceCode}
-          label={item.invoiceCode}
+          key={`${item.invoiceCode}-${item.periodStart}-${item.chargeType ?? "invoice"}`}
+          label={`${item.invoiceCode}${item.chargeType === "opening_due" ? " · Previous due" : item.chargeType === "service" ? " · Service charge" : ""}`}
           value={`${formatBusinessDate(item.periodStart)} to ${formatBusinessDate(item.periodEnd)} · Cash ${formatRupees(item.cashPaise)} · Discount ${formatRupees(item.discountPaise)} · Credit ${formatRupees(item.creditPaise)}`}
         />
       ))}
     </div>
   );
 }
+function PdfPreviewModal({ title, url, onClose }: { title: string; url: string; onClose: () => void }) {
+  return <Modal title={title} onClose={onClose}><iframe className="pdf-preview-frame" title={title} src={url} /></Modal>
+}
+
 function Modal({
   title,
   onClose,
@@ -2680,6 +2813,7 @@ function Pagination({
   );
 }
 export function BackupPage() {
+  const [lastBackup, setLastBackup] = useState<string | null>(() => window.localStorage.getItem(BACKUP_STORAGE_KEY));
   return (
     <section className="page-content">
       <PageTitle
@@ -2707,7 +2841,8 @@ export function BackupPage() {
               <strong>JSON</strong>
             </span>
           </div>
-          <a className="primary" href="/api/backup">
+          <p className="form-help">{lastBackupLabel(lastBackup)}</p>
+          <a className="primary" href="/api/backup" onClick={() => { markBackupDownloaded(); setLastBackup(new Date().toISOString()); }}>
             <Download size={17} aria-hidden="true" /> Download Backup
           </a>
         </article>

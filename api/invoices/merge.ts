@@ -24,7 +24,21 @@ export default async function handler(request: VercelRequest, response: VercelRe
         LEFT JOIN (SELECT invoice_id, SUM(CASE WHEN charge_type = 'service' THEN amount_paise ELSE 0 END) AS service, SUM(CASE WHEN charge_type = 'opening_due' THEN amount_paise ELSE 0 END) AS opening FROM invoice_charges GROUP BY invoice_id) charges ON charges.invoice_id = invoices.id
         LEFT JOIN (SELECT invoice_id, SUM(amount_cash_paise + amount_discount_paise + amount_credit_paise) AS total FROM payment_allocations WHERE is_deleted = 0 GROUP BY invoice_id) allocations ON allocations.invoice_id = invoices.id
         WHERE invoices.id IN (${placeholders}) AND invoices.service_type = ? AND invoices.is_deleted = 0 AND invoices.is_merged = 0 ORDER BY invoices.period_start, invoices.id`, args: [...ids, input.serviceType] })
-      if (sources.rows.length !== ids.length) throw new MergeRequestError(404, 'One or more invoices are unavailable.')
+      if (sources.rows.length !== ids.length) {
+        // A source invoice is hidden from the mergeable set after it has
+        // already been merged.  Treat that as a state conflict (409), not a
+        // missing resource (404), so clients can explain the corrective action
+        // and safely retry with the original, unmerged invoices.
+        const state = await transaction.execute({
+          sql: `SELECT id, is_deleted AS isDeleted, is_merged AS isMerged
+                FROM invoices WHERE id IN (${placeholders}) AND service_type = ?`,
+          args: [...ids, input.serviceType],
+        })
+        if (state.rows.length === ids.length && state.rows.some((row) => Number(row.isMerged) === 1)) {
+          throw new MergeRequestError(409, 'One or more invoices have already been merged. Select the original unmerged invoices.')
+        }
+        throw new MergeRequestError(404, 'One or more invoices are unavailable.')
+      }
       const customerId = Number(sources.rows[0].customer_id)
       if (sources.rows.some((row) => Number(row.customer_id) !== customerId)) throw new MergeRequestError(400, 'Merged invoices must belong to the same customer.')
       const customer = await transaction.execute({ sql: 'SELECT is_deleted FROM customers WHERE id = ?', args: [customerId] })
