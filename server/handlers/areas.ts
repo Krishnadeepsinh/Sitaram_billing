@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
-import { database } from '../_lib/db'
-import { methodNotAllowed, sendError } from '../_lib/http'
-import { requireSession } from '../_lib/session'
-import { body, normalizeArea, serviceTypeSchema } from '../_lib/validation'
+import { database } from '../lib/db.js'
+import { methodNotAllowed, sendError } from '../lib/http.js'
+import { requireSession } from '../lib/session.js'
+import { body, normalizeArea, serviceTypeSchema } from '../lib/validation.js'
 
 const createAreaSchema = z.object({ serviceType: serviceTypeSchema, displayName: z.string().trim().min(1).max(120) })
 const updateAreaSchema = createAreaSchema.extend({ id: z.number().int().positive() })

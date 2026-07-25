@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
-import { database } from '../_lib/db'
-import { methodNotAllowed, sendError } from '../_lib/http'
-import { requireSession } from '../_lib/session'
-import { body } from '../_lib/validation'
+import { database } from '../lib/db.js'
+import { methodNotAllowed, sendError } from '../lib/http.js'
+import { requireSession } from '../lib/session.js'
+import { body } from '../lib/validation.js'
 
 const logoUrlSchema = z.string().url().refine((value) => /^https:\/\//i.test(value), 'Logo URL must use HTTPS.')
 const settingsSchema = z.object({ businessName: z.string().trim().min(1).max(160), address: z.string().trim().min(1).max(500), phoneNumbers: z.string().trim().min(1).max(120), upiId: z.string().trim().min(1).max(160), logoUrl: logoUrlSchema.nullable().optional() })

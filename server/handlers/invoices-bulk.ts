@@ -1,13 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
-import { DateInputError } from '../../src/lib/date'
-import { billingMonthsThrough } from '../../src/lib/billing'
-import { MAX_BILLING_CYCLES } from '../../src/lib/billing'
-import { withWriteTransaction } from '../_lib/db'
-import { methodNotAllowed, sendError } from '../_lib/http'
-import { createInvoiceInTransaction, InvoiceRequestError } from '../_lib/invoice-service'
-import { requireSession } from '../_lib/session'
-import { body, serviceTypeSchema } from '../_lib/validation'
+import { DateInputError } from '../../src/lib/date.js'
+import { billingMonthsThrough } from '../../src/lib/billing.js'
+import { MAX_BILLING_CYCLES } from '../../src/lib/billing.js'
+import { withWriteTransaction } from '../lib/db.js'
+import { methodNotAllowed, sendError } from '../lib/http.js'
+import { createInvoiceInTransaction, InvoiceRequestError } from '../lib/invoice-service.js'
+import { requireSession } from '../lib/session.js'
+import { body, serviceTypeSchema } from '../lib/validation.js'
 
 const schema = z.object({ serviceType: serviceTypeSchema, throughMonth: z.string().regex(/^\d{4}-\d{2}$/), customerIds: z.array(z.number().int().positive()).optional() })
 

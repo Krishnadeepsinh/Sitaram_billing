@@ -1,5 +1,5 @@
-import { replayLedger } from '../../src/lib/replay'
-import { withWriteTransaction, type DatabaseTransaction } from './db'
+import { replayLedger } from '../../src/lib/replay.js'
+import { withWriteTransaction, type DatabaseTransaction } from './db.js'
 
 export async function rebuildCustomerLedger(transaction: DatabaseTransaction, customerId: number) {
   const customer = await transaction.execute({ sql: 'SELECT opening_balance_paise, opening_balance_type FROM customers WHERE id = ?', args: [customerId] })

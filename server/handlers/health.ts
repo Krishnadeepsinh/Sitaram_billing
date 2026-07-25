@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { database } from './_lib/db'
-import { methodNotAllowed, sendError } from './_lib/http'
+import { database } from '../lib/db.js'
+import { methodNotAllowed, sendError } from '../lib/http.js'
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   if (request.method !== 'GET') return methodNotAllowed(response, ['GET'])

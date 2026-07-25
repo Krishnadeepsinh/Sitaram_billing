@@ -1,13 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
-import { MAX_MONEY_PAISE } from '../../src/lib/billing'
-import { DateInputError, parseStrictDate, todayInBusinessTimezone } from '../../src/lib/date'
-import { recordAudit } from '../_lib/audit'
-import { database, withWriteTransaction } from '../_lib/db'
-import { methodNotAllowed, sendError } from '../_lib/http'
-import { requireSession } from '../_lib/session'
-import { body, serviceTypeSchema } from '../_lib/validation'
-import { rebuildCustomerLedger } from '../_lib/ledger'
+import { MAX_MONEY_PAISE } from '../../src/lib/billing.js'
+import { DateInputError, parseStrictDate, todayInBusinessTimezone } from '../../src/lib/date.js'
+import { recordAudit } from '../lib/audit.js'
+import { database, withWriteTransaction } from '../lib/db.js'
+import { methodNotAllowed, sendError } from '../lib/http.js'
+import { requireSession } from '../lib/session.js'
+import { body, serviceTypeSchema } from '../lib/validation.js'
+import { rebuildCustomerLedger } from '../lib/ledger.js'
 
 const paymentSchema = z.object({ serviceType: serviceTypeSchema, customerId: z.number().int().positive(), paymentDate: z.string().min(1), amountReceivedPaise: z.number().int().nonnegative().max(MAX_MONEY_PAISE), discountGivenPaise: z.number().int().nonnegative().max(MAX_MONEY_PAISE).default(0), paymentMode: z.enum(['cash', 'upi']), notes: z.string().trim().max(500).optional(), requestKey: z.string().trim().min(8).max(100) })
   .refine((value) => value.amountReceivedPaise + value.discountGivenPaise > 0, { message: 'Enter an amount received or a discount.' })

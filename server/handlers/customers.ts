@@ -1,14 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
-import { DateInputError, parseStrictDate } from '../../src/lib/date'
-import { todayInBusinessTimezone } from '../../src/lib/date'
-import { MAX_MONEY_PAISE } from '../../src/lib/billing'
-import { recordAudit } from '../_lib/audit'
-import { recomputeBillingPosition } from '../_lib/coverage'
-import { database, withWriteTransaction } from '../_lib/db'
-import { methodNotAllowed, sendError } from '../_lib/http'
-import { requireSession } from '../_lib/session'
-import { body, serviceTypeSchema } from '../_lib/validation'
+import { DateInputError, parseStrictDate } from '../../src/lib/date.js'
+import { todayInBusinessTimezone } from '../../src/lib/date.js'
+import { MAX_MONEY_PAISE } from '../../src/lib/billing.js'
+import { recordAudit } from '../lib/audit.js'
+import { recomputeBillingPosition } from '../lib/coverage.js'
+import { database, withWriteTransaction } from '../lib/db.js'
+import { methodNotAllowed, sendError } from '../lib/http.js'
+import { requireSession } from '../lib/session.js'
+import { body, serviceTypeSchema } from '../lib/validation.js'
 
 const customerSchema = z.object({
   serviceType: serviceTypeSchema,

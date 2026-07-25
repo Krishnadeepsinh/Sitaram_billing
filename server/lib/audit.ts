@@ -1,4 +1,4 @@
-import type { DatabaseTransaction } from './db'
+import type { DatabaseTransaction } from './db.js'
 
 export function recordAudit(transaction: DatabaseTransaction, input: { entityType: 'customer' | 'invoice' | 'payment' | 'expense' | 'plan'; entityId: number; action: string; reason?: string; details?: unknown }) {
   return transaction.execute({

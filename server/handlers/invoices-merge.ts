@@ -1,11 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
-import { addBillingDays, todayInBusinessTimezone } from '../../src/lib/date'
-import { recordAudit } from '../_lib/audit'
-import { withWriteTransaction } from '../_lib/db'
-import { methodNotAllowed, sendError } from '../_lib/http'
-import { requireSession } from '../_lib/session'
-import { body, serviceTypeSchema } from '../_lib/validation'
+import { addBillingDays, todayInBusinessTimezone } from '../../src/lib/date.js'
+import { recordAudit } from '../lib/audit.js'
+import { withWriteTransaction } from '../lib/db.js'
+import { methodNotAllowed, sendError } from '../lib/http.js'
+import { requireSession } from '../lib/session.js'
+import { body, serviceTypeSchema } from '../lib/validation.js'
 
 const schema = z.object({ serviceType: serviceTypeSchema, invoiceIds: z.array(z.number().int().positive()).min(2).max(24) })
 class MergeRequestError extends Error { constructor(public status: number, message: string) { super(message) } }

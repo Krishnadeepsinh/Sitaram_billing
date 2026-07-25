@@ -1,10 +1,10 @@
 import bcrypt from 'bcryptjs'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
-import { database } from '../_lib/db'
-import { methodNotAllowed, sendError } from '../_lib/http'
-import { setSession } from '../_lib/session'
-import { body } from '../_lib/validation'
+import { database } from '../lib/db.js'
+import { methodNotAllowed, sendError } from '../lib/http.js'
+import { setSession } from '../lib/session.js'
+import { body } from '../lib/validation.js'
 
 const loginSchema = z.object({ username: z.string().trim().min(1).max(100), password: z.string().min(1).max(200) })
 

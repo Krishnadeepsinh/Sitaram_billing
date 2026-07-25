@@ -1,4 +1,4 @@
-import { addBillingDays, endOfCalendarMonth, parseStrictDate } from './date'
+import { addBillingDays, endOfCalendarMonth, parseStrictDate } from './date.js'
 
 const dueMonth = new Intl.DateTimeFormat('en-IN', { month: 'short', year: '2-digit', timeZone: 'UTC' })
 

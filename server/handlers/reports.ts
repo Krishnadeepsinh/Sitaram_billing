@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
-import { DateInputError, parseStrictDate, todayInBusinessTimezone } from '../../src/lib/date'
-import { database } from '../_lib/db'
-import { methodNotAllowed, sendError } from '../_lib/http'
-import { requireSession } from '../_lib/session'
+import { DateInputError, parseStrictDate, todayInBusinessTimezone } from '../../src/lib/date.js'
+import { database } from '../lib/db.js'
+import { methodNotAllowed, sendError } from '../lib/http.js'
+import { requireSession } from '../lib/session.js'
 
 const scopeSchema = z.enum(['cable', 'broadband', 'all'])
 

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { methodNotAllowed } from '../_lib/http'
-import { requireSession } from '../_lib/session'
+import { methodNotAllowed } from '../lib/http.js'
+import { requireSession } from '../lib/session.js'
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   if (request.method !== 'GET') return methodNotAllowed(response, ['GET'])

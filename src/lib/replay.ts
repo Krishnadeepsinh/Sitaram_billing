@@ -1,4 +1,4 @@
-import { allocateOldestFirst } from './billing'
+import { allocateOldestFirst } from './billing.js'
 
 export type ReplayCharge = { id: number; chargeType: 'opening_due' | 'service'; amountPaise: number }
 export type ReplayInvoice = { id: number; periodStart: string; amountPaise: number; charges?: ReplayCharge[]; createdAt?: string }

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { database } from './_lib/db'
-import { methodNotAllowed, sendError } from './_lib/http'
-import { requireSession } from './_lib/session'
+import { database } from '../lib/db.js'
+import { methodNotAllowed, sendError } from '../lib/http.js'
+import { requireSession } from '../lib/session.js'
 
 const tables = ['business_settings', 'areas', 'plans', 'customers', 'customer_status_history', 'customer_plan_history', 'customer_plan_gaps', 'invoices', 'invoice_charges', 'invoice_merge_items', 'payments', 'payment_allocations', 'payment_charge_allocations', 'expenses', 'audit_events', 'id_sequences'] as const
 

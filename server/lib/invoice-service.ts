@@ -1,9 +1,9 @@
-import { createInvoicePeriod, MAX_BILLING_CYCLES, MAX_MONEY_PAISE, nextEligibleBillingDate } from '../../src/lib/billing'
-import { parseStrictDate, todayInBusinessTimezone } from '../../src/lib/date'
-import { recordAudit } from './audit'
-import { recomputeBillingPosition } from './coverage'
-import { rebuildCustomerLedger } from './ledger'
-import type { DatabaseTransaction } from './db'
+import { createInvoicePeriod, MAX_BILLING_CYCLES, MAX_MONEY_PAISE, nextEligibleBillingDate } from '../../src/lib/billing.js'
+import { parseStrictDate, todayInBusinessTimezone } from '../../src/lib/date.js'
+import { recordAudit } from './audit.js'
+import { recomputeBillingPosition } from './coverage.js'
+import { rebuildCustomerLedger } from './ledger.js'
+import type { DatabaseTransaction } from './db.js'
 
 export class InvoiceRequestError extends Error {
   constructor(public status: number, message: string, public details?: unknown) { super(message) }

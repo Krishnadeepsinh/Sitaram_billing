@@ -1,5 +1,5 @@
-import { addBillingDays } from '../../src/lib/date'
-import type { DatabaseTransaction } from './db'
+import { addBillingDays } from '../../src/lib/date.js'
+import type { DatabaseTransaction } from './db.js'
 
 export async function recomputeBillingPosition(transaction: DatabaseTransaction, customerId: number, replacementStart?: string) {
   const result = await transaction.execute({ sql: `SELECT customers.installation_date AS installationDate,

@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": ["ES2023", "DOM"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "types": ["node"],
@@ -10,5 +10,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["./**/*.ts", "../src/lib/**/*.ts"]
+  "include": ["./**/*.ts", "../server/**/*.ts"]
 }

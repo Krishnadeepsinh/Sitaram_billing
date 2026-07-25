@@ -4,6 +4,14 @@
       "maxDuration": 10
     }
   },
+  "rewrites": [
+    { "source": "/api/auth/login", "destination": "/api/auth-login?route=auth%2Flogin" },
+    { "source": "/api/auth/logout", "destination": "/api/auth-logout?route=auth%2Flogout" },
+    { "source": "/api/auth/me", "destination": "/api/auth-me?route=auth%2Fme" },
+    { "source": "/api/auth/password", "destination": "/api/auth-password?route=auth%2Fpassword" },
+    { "source": "/api/invoices/bulk", "destination": "/api/invoices-bulk?route=invoices%2Fbulk" },
+    { "source": "/api/invoices/merge", "destination": "/api/invoices-merge?route=invoices%2Fmerge" }
+  ],
   "headers": [{
     "source": "/(.*)",
     "headers": [
