@@ -340,15 +340,15 @@ kbd { padding:2px 6px;border:1px solid var(--border);border-bottom-width:2px;bor
 .permanent-delete-content { grid-template-columns:1fr; }
 .permanent-delete-content .modal-actions { grid-column:1; }
 .danger-button,.danger-button:hover { border-color:#d92d20;background:#d92d20;box-shadow:none; }
-:root[data-theme='dark'] .due-period { border-color:#7f1d1d;color:#fca5a5;background:#32191d; }
-:root[data-theme='dark'] .amount-due { color:#fda29b!important; }
-:root[data-theme='dark'] .amount-credit { color:#75e0a7!important; }
-:root[data-theme='dark'] .ledger-entry.invoice { background:linear-gradient(90deg,rgb(217 45 32 / .11),transparent 48%); }
-:root[data-theme='dark'] .ledger-entry.payment { background:linear-gradient(90deg,rgb(22 138 85 / .13),transparent 48%); }
-:root[data-theme='dark'] .status-toggle.active { border-color:#166534;color:#86efac;background:#132c22; }
-:root[data-theme='dark'] .status-toggle.inactive { border-color:#475569;color:#cbd5e1;background:#293244; }
-:root[data-theme='dark'] .archived-intro { border-color:#7c3f20;background:rgb(242 107 33 / .12); }
-:root[data-theme='dark'] .archived-customer-identity>i,:root[data-theme='dark'] .archived-status { border-color:#7f1d1d;color:#fda29b;background:#32191d; }
+html[data-theme='dark'] .due-period { border-color:#7f1d1d;color:#fca5a5;background:#32191d; }
+html[data-theme='dark'] .amount-due { color:#fda29b!important; }
+html[data-theme='dark'] .amount-credit { color:#75e0a7!important; }
+html[data-theme='dark'] .ledger-entry.invoice { background:linear-gradient(90deg,rgb(217 45 32 / .11),transparent 48%); }
+html[data-theme='dark'] .ledger-entry.payment { background:linear-gradient(90deg,rgb(22 138 85 / .13),transparent 48%); }
+html[data-theme='dark'] .status-toggle.active { border-color:#166534;color:#86efac;background:#132c22; }
+html[data-theme='dark'] .status-toggle.inactive { border-color:#475569;color:#cbd5e1;background:#293244; }
+html[data-theme='dark'] .archived-intro { border-color:#7c3f20;background:rgb(242 107 33 / .12); }
+html[data-theme='dark'] .archived-customer-identity>i,html[data-theme='dark'] .archived-status { border-color:#7f1d1d;color:#fda29b;background:#32191d; }
 
 /* Command menu. */
 .command-backdrop { position:fixed;inset:0;z-index:140;display:grid;place-items:start center;padding:13vh 18px 18px;background:rgb(10 15 27 / .62);backdrop-filter:blur(7px);animation:backdrop-in .14s ease-out both; }
@@ -398,13 +398,13 @@ kbd { padding:2px 6px;border:1px solid var(--border);border-bottom-width:2px;bor
 .login-card input:focus { border-color:var(--primary);outline:3px solid var(--ring);background:#fff; }
 .login-help { display:flex;align-items:center;justify-content:center;gap:5px; }
 
-:root[data-theme='dark'] .secondary,:root[data-theme='dark'] .register-heading span,
-:root[data-theme='dark'] .service-tabs button { color:var(--foreground);background:var(--card); }
-:root[data-theme='dark'] .entity-cell>i { border-color:#78350f;background:#3c2417; }
-:root[data-theme='dark'] .entity-cell>i.avatar { border:0;color:#93c5fd;background:#172554; }
-:root[data-theme='dark'] .status-merged,:root[data-theme='dark'] .status-inactive { border-color:#475569;color:#cbd5e1;background:#293244; }
-:root[data-theme='dark'] .area-chips>span { color:var(--foreground);background:var(--secondary); }
-:root[data-theme='dark'] .backup-warning { border-color:#7f1d1d;background:#30191e; }
+html[data-theme='dark'] .secondary,html[data-theme='dark'] .register-heading span,
+html[data-theme='dark'] .service-tabs button { color:var(--foreground);background:var(--card); }
+html[data-theme='dark'] .entity-cell>i { border-color:#78350f;background:#3c2417; }
+html[data-theme='dark'] .entity-cell>i.avatar { border:0;color:#93c5fd;background:#172554; }
+html[data-theme='dark'] .status-merged,html[data-theme='dark'] .status-inactive { border-color:#475569;color:#cbd5e1;background:#293244; }
+html[data-theme='dark'] .area-chips>span { color:var(--foreground);background:var(--secondary); }
+html[data-theme='dark'] .backup-warning { border-color:#7f1d1d;background:#30191e; }
 .audit-box{display:grid;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
 .audit-list{display:grid;gap:6px;max-height:360px;overflow:auto}
 .audit-row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--border);font-size:12px}
