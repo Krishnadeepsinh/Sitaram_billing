@@ -120,7 +120,7 @@ function drawMixedText(page: ReturnType<PDFDocument['addPage']>, value: string, 
   let cursor = x
   for (const run of runs) {
     if (!/[\u0A80-\u0AFF]/.test(run)) {
-      const safeRun = run.replace(/\u2713/g, 'V').replace(/[^\x00-\x7F]/g, '-')
+      const safeRun = Array.from(run.replace(/\u2713/g, 'V'), (character) => character.charCodeAt(0) <= 127 ? character : '-').join('')
       page.drawText(safeRun, { x: cursor, y, size, font: latin, color }); cursor += latin.widthOfTextAtSize(safeRun, size)
       continue
     }
