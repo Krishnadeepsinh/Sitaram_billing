@@ -1,7 +1,24 @@
 :root {
-  --background: #eef0f4; --foreground: #171d2e; --card: #f9fafb; --muted: #737b8b;
-  --secondary: #e8eaee; --border: #d5d9e1; --primary: #f97316; --sidebar: #1d2437;
-  --sidebar-accent: #293148; --success: #21965d; --danger: #dc3545; color: var(--foreground); background: var(--background);
+  /* Phase 1 foundation: the last pre-existing light-theme values, consolidated once. */
+  --background: #f1f3f7;
+  --foreground: #182238;
+  --card: #fbfcfe;
+  --muted: #6f7b91;
+  --secondary: #e9edf3;
+  --border: #d6dce6;
+  --primary: #ff6b1a;
+  --sidebar: #192236;
+  --sidebar-accent: #29334c;
+  --success: #168a55;
+  --danger: #d92d20;
+  --topbar: rgb(255 255 255 / .92);
+  --input: #f8f9fb;
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / .04);
+  --shadow-md: 0 10px 26px rgb(15 23 42 / .08);
+  --shadow-lg: 0 24px 64px rgb(15 23 42 / .18);
+  --ring: rgb(242 107 33 / .22);
+  color: var(--foreground);
+  background: var(--background);
 }
 body { color: var(--foreground); background: var(--background); line-height: 1.5; }
 h1,h2,h3,h4,p { margin: 0; } h1,h2,h3,h4 { font-family: 'Sora',sans-serif; letter-spacing: -.01em; text-wrap: balance; }
@@ -54,20 +71,6 @@ main { min-width:0;overflow-y:auto;background:var(--background) }.workspace-cont
    dense navy rail, and roomy white surfaces.  These presentation-only
    overrides keep the existing handlers and data components intact while
    bringing every page onto the same visual grid. */
-:root {
-  --background:#f1f3f7;
-  --card:#fbfcfe;
-  --secondary:#e9edf3;
-  --border:#d6dce6;
-  --muted:#6f7b91;
-  --foreground:#182238;
-  --primary:#ff6b1a;
-  --sidebar:#192236;
-  --sidebar-accent:#29334c;
-  --shadow-sm:0 1px 2px rgb(15 23 42 / .04);
-  --shadow-md:0 10px 26px rgb(15 23 42 / .08);
-  --shadow-lg:0 24px 64px rgb(15 23 42 / .18);
-}
 body { background:var(--background); color:var(--foreground); }
 .app-shell { grid-template-columns:256px minmax(0,1fr); }
 .sidebar { background:var(--sidebar); border-right-color:#2c354b; }
@@ -159,13 +162,6 @@ main { background:var(--background); }
 }
 
 /* Premium application shell: shadcn-style composition using the existing stack. */
-:root {
-  --background:#f4f6f9;--foreground:#141b2d;--card:#fff;--muted:#687387;--secondary:#f0f2f6;
-  --border:#dfe3ea;--primary:#f26b21;--sidebar:#182033;--sidebar-accent:#252e45;
-  --success:#168a55;--danger:#d92d20;--topbar:rgb(255 255 255 / .92);--input:#f8f9fb;
-  --shadow-sm:0 1px 2px rgb(15 23 42 / .05);--shadow-md:0 8px 24px rgb(15 23 42 / .08);
-  --shadow-lg:0 24px 64px rgb(15 23 42 / .18);--ring:rgb(242 107 33 / .22);
-}
 :root[data-theme='dark'] {
   --background:#0f1420;--foreground:#e9edf5;--card:#171e2d;--muted:#98a3b8;--secondary:#202839;
   --border:#2c3548;--sidebar:#101624;--sidebar-accent:#20293c;--topbar:rgb(20 27 41 / .92);
@@ -561,7 +557,6 @@ kbd { padding:2px 6px;border:1px solid var(--border);border-bottom-width:2px;bor
 .pdf-preview-frame { width: min(100%, 900px); height: min(75vh, 760px); min-height: 520px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
 
 /* Reference workspace skin (last so it wins over the legacy compatibility rules above). */
-:root { --background:#f1f3f7; --card:#fbfcfe; --secondary:#e9edf3; --border:#d6dce6; --muted:#6f7b91; --foreground:#182238; --primary:#ff6b1a; --sidebar:#192236; --sidebar-accent:#29334c; --shadow-sm:0 1px 2px rgb(15 23 42 / .04); --shadow-md:0 10px 26px rgb(15 23 42 / .08); --shadow-lg:0 24px 64px rgb(15 23 42 / .18); }
 body { background:var(--background); color:var(--foreground); }
 .app-shell { grid-template-columns:256px minmax(0,1fr); }
 .sidebar { background:var(--sidebar); border-right-color:#2c354b; }
