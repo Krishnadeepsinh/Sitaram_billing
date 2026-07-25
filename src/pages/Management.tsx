@@ -378,6 +378,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [archivedCustomers, setArchivedCustomers] = useState<Customer[]>([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | Customer["status"]>(
     "all",
@@ -425,13 +426,11 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
         listAreas(serviceType),
         listPlans(serviceType),
         listCustomers(serviceType, search),
-        listCustomers(serviceType, "", true),
       ])
-        .then(([nextAreas, nextPlans, nextCustomers, nextArchived]) => {
+        .then(([nextAreas, nextPlans, nextCustomers]) => {
           setAreas(nextAreas);
           setPlans(nextPlans);
           setCustomers(nextCustomers);
-          setArchivedCustomers(nextArchived);
           const availableIds = new Set(nextCustomers.map(({ id }) => id));
           setSelectedCustomerIds(
             (selected) =>
@@ -445,10 +444,18 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
     },
     [serviceType],
   );
+  const loadArchived = useCallback(() => {
+    setArchivedLoading(true);
+    listCustomers(serviceType, "", true)
+      .then(setArchivedCustomers)
+      .catch((error: Error) => setNotice({ kind: "error", message: error.message }))
+      .finally(() => setArchivedLoading(false));
+  }, [serviceType]);
   useEffect(() => {
     setQuery("");
     setEditing(undefined);
     setFormOpen(false);
+    setArchivedCustomers([]);
     setSelectedCustomerIds(new Set());
     refresh("");
   }, [refresh]);
@@ -793,8 +800,8 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 ? `Export Selected (${selectedCustomerIds.size})`
                 : "Export"}
             </button>
-            <button className="secondary" onClick={() => setArchivedOpen(true)}>
-              <Archive size={16} /> Archived ({archivedCustomers.length})
+            <button className="secondary" onClick={() => { setArchivedOpen(true); loadArchived(); }}>
+              <Archive size={16} /> Archived{archivedCustomers.length ? ` (${archivedCustomers.length})` : ""}
             </button>
             <button className="primary" onClick={openAdd}>
               <Plus size={16} /> Add Subscriber
@@ -1784,7 +1791,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 placeholder="Add a note only if useful"
               />
             </label>
-            {archivedCustomers.length ? (
+            {archivedLoading ? <p className="empty-inline">Loading archived subscribers…</p> : archivedCustomers.length ? (
               archivedCustomers.map((customer) => (
                 <article className="archived-customer-card" key={customer.id}>
                   <div className="archived-customer-heading">
