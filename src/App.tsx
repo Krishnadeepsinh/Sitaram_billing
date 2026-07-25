@@ -1,10 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowRightLeft, BarChart3, Bell, ChevronLeft, ChevronRight, CircleDollarSign, Command, DatabaseZap, FileText, HardDriveDownload, LayoutDashboard, LogOut, Menu, Moon, Package, Search, Settings, ShieldCheck, Sun, Users, Wallet, X } from 'lucide-react'
 import { apiHealth, currentAdmin, login, logout } from './lib/api'
-import { CustomersPage, PlansPage } from './pages/Management'
-import { BackupPage, DashboardPage, ExpensesPage, InvoicesPage, PaymentsPage, RemindersPage, ReportsPage, SettingsPage } from './pages/Operations'
 import './App.css'
+
+const CustomersPage = lazy(() => import('./pages/Management').then(({ CustomersPage }) => ({ default: CustomersPage })))
+const PlansPage = lazy(() => import('./pages/Management').then(({ PlansPage }) => ({ default: PlansPage })))
+const DashboardPage = lazy(() => import('./pages/Operations').then(({ DashboardPage }) => ({ default: DashboardPage })))
+const ExpensesPage = lazy(() => import('./pages/Operations').then(({ ExpensesPage }) => ({ default: ExpensesPage })))
+const InvoicesPage = lazy(() => import('./pages/Operations').then(({ InvoicesPage }) => ({ default: InvoicesPage })))
+const PaymentsPage = lazy(() => import('./pages/Operations').then(({ PaymentsPage }) => ({ default: PaymentsPage })))
+const RemindersPage = lazy(() => import('./pages/Operations').then(({ RemindersPage }) => ({ default: RemindersPage })))
+const ReportsPage = lazy(() => import('./pages/Operations').then(({ ReportsPage }) => ({ default: ReportsPage })))
+const SettingsPage = lazy(() => import('./pages/Operations').then(({ SettingsPage }) => ({ default: SettingsPage })))
+const BackupPage = lazy(() => import('./pages/Operations').then(({ BackupPage }) => ({ default: BackupPage })))
 
 type ServiceType = 'cable' | 'broadband'
 const navigation = [['Dashboard', LayoutDashboard], ['Subscribers', Users], ['Plans', Package], ['Invoices', FileText], ['Payments', Wallet], ['Reports', BarChart3], ['Expenses', CircleDollarSign], ['Reminders', Bell], ['Settings', Settings], ['Manual Backup', HardDriveDownload]] as const
@@ -74,7 +83,7 @@ function App() {
         <div className="topbar-start"><button className="sidebar-trigger desktop-only" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>{sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}</button><button className="sidebar-trigger mobile-only" onClick={() => setMenuOpen(true)} aria-label="Open navigation" aria-expanded={menuOpen}><Menu size={19} /></button><div className="breadcrumbs"><span>{serviceName} Workspace</span><i>/</i><strong>{page}</strong></div></div>
         <div className="topbar-actions"><button className="command-trigger" onClick={() => { if (!document.querySelector('[aria-modal="true"]')) setCommandOpen(true) }}><Search size={15} aria-hidden="true" /><span>Search anything…</span><kbd>Ctrl K</kbd></button><span className={`connection-pill ${connected ? 'connected' : ''}`}><i />{connected ? 'Connected' : 'Offline'}</span><button className="topbar-icon" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} theme`}>{theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="user-chip" onClick={signOut} aria-label={`Sign out ${username}`}><span>{username.slice(0, 1).toUpperCase()}</span><span><strong>{username}</strong><small>Administrator</small></span><LogOut size={15} /></button></div>
       </header>
-      <div className="workspace-content">{page === 'Dashboard' ? <DashboardPage serviceType={service} onNavigate={navigateTo} /> : page === 'Plans' ? <PlansPage serviceType={service} /> : page === 'Subscribers' ? <CustomersPage serviceType={service} /> : page === 'Invoices' ? <InvoicesPage serviceType={service} /> : page === 'Payments' ? <PaymentsPage serviceType={service} /> : page === 'Reports' ? <ReportsPage serviceType={service} /> : page === 'Expenses' ? <ExpensesPage /> : page === 'Reminders' ? <RemindersPage serviceType={service} /> : page === 'Manual Backup' ? <BackupPage /> : <SettingsPage />}</div>
+      <Suspense fallback={<div className="page-loading" role="status">Loading workspace…</div>}><div className="workspace-content">{page === 'Dashboard' ? <DashboardPage serviceType={service} onNavigate={navigateTo} /> : page === 'Plans' ? <PlansPage serviceType={service} /> : page === 'Subscribers' ? <CustomersPage serviceType={service} /> : page === 'Invoices' ? <InvoicesPage serviceType={service} /> : page === 'Payments' ? <PaymentsPage serviceType={service} /> : page === 'Reports' ? <ReportsPage serviceType={service} /> : page === 'Expenses' ? <ExpensesPage /> : page === 'Reminders' ? <RemindersPage serviceType={service} /> : page === 'Manual Backup' ? <BackupPage /> : <SettingsPage />}</div></Suspense>
     </main>
     {commandOpen ? <CommandPalette page={page} onNavigate={(nextPage) => { navigateTo(nextPage); setCommandOpen(false) }} onClose={() => setCommandOpen(false)} /> : null}
   </div>

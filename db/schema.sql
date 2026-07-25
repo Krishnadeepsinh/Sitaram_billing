@@ -230,6 +230,22 @@ CREATE TABLE IF NOT EXISTS payment_charge_allocations (
 CREATE INDEX IF NOT EXISTS payment_charge_allocations_charge_index
   ON payment_charge_allocations(invoice_charge_id);
 
+-- Hot-path indexes for customer, invoice, and payment listings at scale.
+CREATE INDEX IF NOT EXISTS customers_service_status_sort_index
+  ON customers(service_type, is_deleted, status, sort_order);
+CREATE INDEX IF NOT EXISTS invoices_list_filter_index
+  ON invoices(service_type, is_deleted, is_merged, period_start, id);
+CREATE INDEX IF NOT EXISTS invoices_customer_period_active_index
+  ON invoices(customer_id, is_deleted, is_merged, period_start, period_end);
+CREATE INDEX IF NOT EXISTS invoice_charges_invoice_type_index
+  ON invoice_charges(invoice_id, charge_type);
+CREATE INDEX IF NOT EXISTS payment_allocations_invoice_active_index
+  ON payment_allocations(invoice_id, is_deleted);
+CREATE INDEX IF NOT EXISTS payment_allocations_payment_active_index
+  ON payment_allocations(payment_id, is_deleted);
+CREATE INDEX IF NOT EXISTS payments_list_filter_index
+  ON payments(service_type, is_deleted, payment_date, id);
+
 CREATE TABLE IF NOT EXISTS expenses (
   id INTEGER PRIMARY KEY,
   description TEXT NOT NULL CHECK (length(trim(description)) > 0),

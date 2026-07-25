@@ -162,5 +162,25 @@ if (!applied4.rows[0]) {
     transaction.close()
   }
 }
+const applied5 = await client.execute('SELECT version FROM schema_migrations WHERE version = 5')
+if (!applied5.rows[0]) {
+  const transaction = await client.transaction('write')
+  try {
+    await transaction.execute('CREATE INDEX IF NOT EXISTS customers_service_status_sort_index ON customers(service_type, is_deleted, status, sort_order)')
+    await transaction.execute('CREATE INDEX IF NOT EXISTS invoices_list_filter_index ON invoices(service_type, is_deleted, is_merged, period_start, id)')
+    await transaction.execute('CREATE INDEX IF NOT EXISTS invoices_customer_period_active_index ON invoices(customer_id, is_deleted, is_merged, period_start, period_end)')
+    await transaction.execute('CREATE INDEX IF NOT EXISTS invoice_charges_invoice_type_index ON invoice_charges(invoice_id, charge_type)')
+    await transaction.execute('CREATE INDEX IF NOT EXISTS payment_allocations_invoice_active_index ON payment_allocations(invoice_id, is_deleted)')
+    await transaction.execute('CREATE INDEX IF NOT EXISTS payment_allocations_payment_active_index ON payment_allocations(payment_id, is_deleted)')
+    await transaction.execute('CREATE INDEX IF NOT EXISTS payments_list_filter_index ON payments(service_type, is_deleted, payment_date, id)')
+    await transaction.execute({ sql: 'INSERT INTO schema_migrations (version, applied_at) VALUES (5, ?)', args: [new Date().toISOString()] })
+    await transaction.commit()
+  } catch (error) {
+    await transaction.rollback()
+    throw error
+  } finally {
+    transaction.close()
+  }
+}
 await client.close()
 console.log('Database schema applied successfully.')
