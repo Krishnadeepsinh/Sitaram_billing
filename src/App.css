@@ -861,6 +861,7 @@ button:not(:disabled),a,.nav-item { cursor:pointer; }
 html,body,#root { min-height:100%; }
 body { overflow-x:hidden; }
 .workspace-content,.page-content,.panel,.table-panel,.modal { min-width:0; }
+.page-content,.dashboard-page { width:100%; max-width:100%; }
 .financial-popover { max-width:calc(100vw - 24px); }
 .command-dialog { width:min(620px,calc(100vw - 32px)); }
 .pdf-preview-frame { display:block; width:100%; max-width:100%; height:min(76dvh,760px); min-height:420px; }
@@ -887,6 +888,9 @@ body { overflow-x:hidden; }
   .table-wrap table { max-width:100%; }
   .report-ledgers,.reference-feature-grid { grid-template-columns:1fr; }
   .backup-layout { grid-template-columns:1fr; }
+  .dashboard-page .dashboard-metrics,
+  .dashboard-page .quick-actions { grid-template-columns:1fr; }
+  .dashboard-page .dashboard-grid { grid-template-columns:1fr; }
 }
 @media (max-width:620px) {
   .page-actions > *, .export-actions > *, .dashboard-range > * { width:100%; }
