@@ -1205,6 +1205,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
         <Modal
           title={editing ? `Edit ${editing.customerCode}` : "Add Subscriber"}
           wide
+          compact
           onClose={() => {
             setFormOpen(false);
             setEditing(undefined);
@@ -1884,11 +1885,13 @@ function Modal({
   title,
   onClose,
   wide,
+  compact,
   children,
 }: {
   title: string;
   onClose: () => void;
   wide?: boolean;
+  compact?: boolean;
   children: ReactNode;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -1932,7 +1935,7 @@ function Modal({
     >
       <section
         ref={dialogRef}
-        className={wide ? "modal modal-wide" : "modal"}
+        className={`${wide ? "modal modal-wide" : "modal"}${compact ? " modal-compact" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="management-modal-title"

@@ -636,6 +636,16 @@ main { background:var(--background); }
 @media(max-width:1100px){ .workspace-content { padding-inline:26px; } }
 @media(max-width:620px){ .workspace-content { padding:22px 16px 48px; } .page-title h1,.page-heading { font-size:26px; } .page-title p { font-size:14px; } .panel { padding:18px; } .table-wrap { margin:14px -18px -18px; } .app-topbar { height:64px; padding-inline:16px; } .topbar-actions .connection-pill,.topbar-actions .command-trigger { display:none; } }
 
+/* Keep the subscriber form compact and focused; wide is reserved for detail/history views. */
+.modal-compact { width:min(760px,calc(100vw - 48px)); max-height:calc(100dvh - 32px); padding:0 20px 20px; border-radius:14px; }
+.modal-compact .modal-heading { min-height:64px; margin:0 -20px; padding:14px 20px; }
+.modal-compact .modal-heading h2 { font-size:19px; line-height:26px; }
+.modal-compact .modal-form { gap:14px 16px; margin-top:16px; }
+.modal-compact .modal-form label { gap:5px; font-size:12px; line-height:16px; }
+.modal-compact .modal-form input,.modal-compact .modal-form select { min-height:40px; padding:8px 10px; border-radius:8px; font-size:13px; }
+.modal-compact .modal-form .modal-actions { margin:4px -20px -20px; padding:14px 20px; }
+@media(max-width:620px){ .modal-compact { width:calc(100vw - 20px); max-height:calc(100dvh - 20px); padding:0 16px 16px; } .modal-compact .modal-heading { margin:0 -16px; padding:14px 16px; } .modal-compact .modal-form .modal-actions { margin:4px -16px -16px; padding:14px 16px; } }
+
 /* Consistent nested controls and transient states across every sub-page. */
 button { -webkit-tap-highlight-color:transparent; }
 button:not(:disabled):active { transform:translateY(1px) scale(.985); }
