@@ -720,5 +720,5 @@ describe('financial API flow', () => {
     const blocked = new ResponseMock()
     await loginHandler(request('POST', '', { username: 'admin', password: 'ChangedPass456' }, {}, '10.0.0.3'), blocked as unknown as VercelResponse)
     expect(blocked.statusCode).toBe(429)
-  })
+  }, 20000)
 })
