@@ -1,9 +1,9 @@
-import type { Transaction } from '@libsql/client'
 import { createInvoicePeriod, MAX_BILLING_CYCLES, MAX_MONEY_PAISE, nextEligibleBillingDate } from '../../src/lib/billing'
 import { parseStrictDate, todayInBusinessTimezone } from '../../src/lib/date'
 import { recordAudit } from './audit'
 import { recomputeBillingPosition } from './coverage'
 import { rebuildCustomerLedger } from './ledger'
+import type { DatabaseTransaction } from './db'
 
 export class InvoiceRequestError extends Error {
   constructor(public status: number, message: string, public details?: unknown) { super(message) }
@@ -20,7 +20,7 @@ export type CreateInvoiceInput = {
   historicalReason?: string
 }
 
-export async function createInvoiceInTransaction(transaction: Transaction, input: CreateInvoiceInput) {
+export async function createInvoiceInTransaction(transaction: DatabaseTransaction, input: CreateInvoiceInput) {
   if (!Number.isInteger(input.monthsBilled) || input.monthsBilled < 1 || input.monthsBilled > MAX_BILLING_CYCLES) throw new InvoiceRequestError(400, `Choose between 1 and ${MAX_BILLING_CYCLES} 30-day cycles.`)
   // Keep archived customers in the lookup so we can return a conflict (rather
   // than the generic setup error) when an admin tries to issue a new invoice.

@@ -21,7 +21,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
       const customers = await transaction.execute({ sql: `SELECT customers.id, customers.next_billing_start_date AS nextBillingStartDate FROM customers JOIN plans ON plans.id = customers.plan_id
         WHERE customers.service_type = ? AND customers.status = 'active' AND customers.is_deleted = 0 AND customers.next_billing_start_date IS NOT NULL AND plans.is_active = 1 ${selected}
         ORDER BY customers.sort_order`, args: [input.serviceType, ...(input.customerIds ?? [])] })
-      const generated = []; const skipped: Array<{ customerId: number; reason: string }> = []; const failed: Array<{ customerId: number; reason: string }> = []
+      const generated: Array<Awaited<ReturnType<typeof createInvoiceInTransaction>>> = []; const skipped: Array<{ customerId: number; reason: string }> = []; const failed: Array<{ customerId: number; reason: string }> = []
       const foundIds = new Set(customers.rows.map((customer) => Number(customer.id)))
       for (const requestedId of input.customerIds ?? []) if (!foundIds.has(requestedId)) failed.push({ customerId: requestedId, reason: 'Customer is unavailable or missing active billing setup.' })
       for (const customer of customers.rows) {

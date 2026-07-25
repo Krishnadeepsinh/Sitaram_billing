@@ -1,7 +1,7 @@
-import type { Transaction } from '@libsql/client'
 import { addBillingDays } from '../../src/lib/date'
+import type { DatabaseTransaction } from './db'
 
-export async function recomputeBillingPosition(transaction: Transaction, customerId: number, replacementStart?: string) {
+export async function recomputeBillingPosition(transaction: DatabaseTransaction, customerId: number, replacementStart?: string) {
   const result = await transaction.execute({ sql: `SELECT customers.installation_date AS installationDate,
     (SELECT MAX(period_end) FROM invoices WHERE customer_id = customers.id AND is_deleted = 0 AND is_merged = 0) AS latestPeriodEnd,
     (SELECT effective_date FROM customer_status_history WHERE customer_id = customers.id AND status = 'active' ORDER BY effective_date DESC, id DESC LIMIT 1) AS latestActivation

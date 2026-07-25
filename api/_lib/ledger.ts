@@ -1,8 +1,7 @@
-import type { Transaction } from '@libsql/client'
 import { replayLedger } from '../../src/lib/replay'
-import { withWriteTransaction } from './db'
+import { withWriteTransaction, type DatabaseTransaction } from './db'
 
-export async function rebuildCustomerLedger(transaction: Transaction, customerId: number) {
+export async function rebuildCustomerLedger(transaction: DatabaseTransaction, customerId: number) {
   const customer = await transaction.execute({ sql: 'SELECT opening_balance_paise, opening_balance_type FROM customers WHERE id = ?', args: [customerId] })
   if (!customer.rows[0]) throw new Error('Customer not found.')
 

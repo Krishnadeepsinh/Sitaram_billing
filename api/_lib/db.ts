@@ -1,4 +1,6 @@
-import { createClient, type Transaction } from '@libsql/client'
+import { createClient } from '@libsql/client'
+
+export type DatabaseTransaction = Awaited<ReturnType<ReturnType<typeof createClient>['transaction']>>
 
 let client: ReturnType<typeof createClient> | undefined
 let localWriteTail = Promise.resolve()
@@ -21,9 +23,9 @@ function isBusy(error: unknown) {
   return error instanceof Error && ('code' in error && error.code === 'SQLITE_BUSY' || /busy|locked|transaction conflict/i.test(error.message))
 }
 
-async function runWriteTransaction<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
+async function runWriteTransaction<T>(work: (transaction: DatabaseTransaction) => Promise<T>): Promise<T> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    let transaction: Transaction | undefined
+    let transaction: DatabaseTransaction | undefined
     try {
       transaction = await database().transaction('write')
       const result = await work(transaction)
@@ -41,7 +43,7 @@ async function runWriteTransaction<T>(work: (transaction: Transaction) => Promis
   throw new Error('Unable to start a database transaction.')
 }
 
-export async function withWriteTransaction<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
+export async function withWriteTransaction<T>(work: (transaction: DatabaseTransaction) => Promise<T>): Promise<T> {
   const url = process.env.TURSO_DATABASE_URL ?? ''
   if (url !== ':memory:' && !url.startsWith('file:')) return runWriteTransaction(work)
   const previous = localWriteTail
