@@ -1144,7 +1144,6 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               </span>
               <button
                 className="icon-button"
-                autoFocus
                 aria-label="Close financial summary"
                 onClick={() => setFinancialPopover(undefined)}
               >
