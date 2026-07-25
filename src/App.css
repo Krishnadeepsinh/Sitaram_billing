@@ -17,6 +17,20 @@
   --shadow-md: 0 10px 26px rgb(15 23 42 / .08);
   --shadow-lg: 0 24px 64px rgb(15 23 42 / .18);
   --ring: rgb(242 107 33 / .22);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --font-ui: 'Sora', sans-serif;
+  --font-data: 'JetBrains Mono', monospace;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --motion-fast: 150ms;
+  --motion-standard: 220ms;
   color: var(--foreground);
   background: var(--background);
 }
@@ -167,6 +181,7 @@ main { background:var(--background); }
   --border:#2c3548;--sidebar:#101624;--sidebar-accent:#20293c;--topbar:rgb(20 27 41 / .92);
   --input:#111827;--shadow-sm:0 1px 2px rgb(0 0 0 / .22);--shadow-md:0 10px 30px rgb(0 0 0 / .22);
   --shadow-lg:0 28px 72px rgb(0 0 0 / .42);
+  --ring:rgb(251 146 60 / .28);
 }
 html { color-scheme:light; }
 html[data-theme='dark'] { color-scheme:dark; }
@@ -738,6 +753,69 @@ input::placeholder,textarea::placeholder { color:#8a95a8; opacity:1; }
 .customer-register .table-wrap th,.customer-register .table-wrap td { padding-block:12px; }
 .customer-register .subscriber-number { min-width:40px; height:40px; font-size:14px; }
 .customer-register .table-wrap td { font-size:13px; }
+
+/* Phase 2/3 final polish: token-driven shared components and page surfaces. */
+body,button,input,select,textarea { font-family:var(--font-ui); }
+button,a,select { touch-action:manipulation; }
+button:not(:disabled),a,.nav-item { cursor:pointer; }
+.table-wrap td,.metrics strong,.price-text,.amount-due,.amount-credit,.financial-summary dd,
+.history-row .money,.pagination span { font-family:var(--font-data); font-variant-numeric:tabular-nums; }
+.status { align-items:center; gap:6px; min-height:26px; padding:4px 10px; }
+.status::before { width:6px; height:6px; flex:none; border-radius:50%; background:currentColor; content:''; }
+.status-paid::before,.status-settled::before,.status-active::before { background:#16a34a; }
+.status-partial::before { background:#d97706; }
+.status-merged::before,.status-inactive::before { background:#64748b; }
+.status-credit-added::before { background:#2563eb; }
+.panel-heading,.register-heading { min-height:48px; }
+.table-wrap tbody tr:focus-within { position:relative; z-index:1; outline:2px solid var(--ring); outline-offset:-2px; }
+.table-wrap td[data-label] { vertical-align:middle; }
+.modal { overscroll-behavior:contain; }
+.modal-form label > span:first-child,.form-panel label > span:first-child { line-height:1.4; }
+.modal-form input,.modal-form select,.modal-form textarea,.form-panel input,.form-panel select,.form-panel textarea { min-height:44px; }
+.modal-actions { padding-top:var(--space-2); }
+.modal-actions .primary,.modal-actions .secondary { min-width:112px; }
+.modal.modal-compact { width:min(760px,calc(100vw - 32px)); }
+.modal.modal-compact .modal-heading { min-height:64px; }
+.confirm-content,.detail-grid,.financial-summary,.history-ledger { contain:layout paint; }
+.page-content > .panel { min-width:0; }
+.page-actions .primary svg,.page-actions .secondary svg { flex:none; }
+.notice[role='alert'],.form-error,.field-error { line-height:1.5; }
+.loading-screen,.page-loading { min-height:220px; }
+.page-loading { display:grid; place-items:center; color:var(--muted); font-size:14px; }
+
+/* Keep the reference hierarchy readable in dark mode. */
+[data-theme='dark'][data-theme] .app-topbar { background:var(--topbar); border-bottom-color:var(--border); }
+[data-theme='dark'][data-theme] .page-title p,
+[data-theme='dark'][data-theme] .dashboard-period { color:var(--muted)!important; }
+[data-theme='dark'][data-theme] .dashboard-page .quick-actions button:nth-child(1),
+[data-theme='dark'][data-theme] .dashboard-page .quick-actions button:nth-child(2),
+[data-theme='dark'][data-theme] .dashboard-page .quick-actions button:nth-child(3),
+[data-theme='dark'][data-theme] .dashboard-page .quick-actions button:nth-child(4) { border-color:var(--border); background:var(--card); }
+[data-theme='dark'][data-theme] .dashboard-page .quick-actions button>span { color:var(--primary); background:var(--secondary); }
+[data-theme='dark'][data-theme] .dashboard-page .quick-actions button:nth-child(3)>span { color:#4ade80; }
+[data-theme='dark'][data-theme] .dashboard-page .quick-actions button:nth-child(4)>span { color:#c084fc; }
+[data-theme='dark'][data-theme] .login-card { background:var(--card); border-color:var(--border); }
+[data-theme='dark'][data-theme] .login-card h2,[data-theme='dark'][data-theme] .login-card label { color:var(--foreground); }
+[data-theme='dark'][data-theme] .login-card input,[data-theme='dark'][data-theme] .password-field button { color:var(--foreground); background:var(--input); border-color:var(--border); }
+
+@media(max-width:900px) {
+  .workspace-content { padding-bottom:calc(50px + env(safe-area-inset-bottom)); }
+  .modal-backdrop { padding:12px; }
+  .modal { width:min(100%,640px); max-height:calc(100dvh - 24px); }
+}
+@media(max-width:620px) {
+  .panel { border-radius:var(--radius-md); }
+  .page-content { gap:var(--space-4); }
+  .modal-backdrop { padding:8px; align-items:end; }
+  .modal,.modal.modal-compact { width:100%; max-height:calc(100dvh - 16px); border-radius:16px 16px 10px 10px; }
+  .modal-actions { position:sticky; bottom:-16px; z-index:2; margin-inline:-16px; padding:12px 16px calc(12px + env(safe-area-inset-bottom)); background:var(--card); border-top:1px solid var(--border); }
+  .modal-actions .primary,.modal-actions .secondary { flex:1; min-width:0; }
+  .customer-filter-grid { grid-template-columns:1fr; }
+  .customer-filter-grid .due-toggle { width:100%; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .page-content,.modal,.modal-backdrop,.sidebar-open { animation:none!important; }
+}
 .customer-register .entity-cell strong { font-size:14px; }
 @media(max-width:900px){ .dashboard-page .dashboard-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .dashboard-page .dashboard-toolbar { align-items:stretch; } .dashboard-page .dashboard-range { flex-wrap:wrap; } .dashboard-page .dashboard-range label { min-width:0; flex:1; } }
 @media(max-width:620px){ .dashboard-page .dashboard-metrics { grid-template-columns:1fr; } .dashboard-page .dashboard-toolbar h2 { font-size:27px; } .dashboard-period { font-size:14px!important; } .dashboard-page .dashboard-range label { flex-basis:calc(50% - 5px); } }
