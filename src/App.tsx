@@ -6,14 +6,16 @@ import './App.css'
 
 const CustomersPage = lazy(() => import('./pages/Management').then(({ CustomersPage }) => ({ default: CustomersPage })))
 const PlansPage = lazy(() => import('./pages/Management').then(({ PlansPage }) => ({ default: PlansPage })))
-const DashboardPage = lazy(() => import('./pages/Operations').then(({ DashboardPage }) => ({ default: DashboardPage })))
-const ExpensesPage = lazy(() => import('./pages/Operations').then(({ ExpensesPage }) => ({ default: ExpensesPage })))
-const InvoicesPage = lazy(() => import('./pages/Operations').then(({ InvoicesPage }) => ({ default: InvoicesPage })))
-const PaymentsPage = lazy(() => import('./pages/Operations').then(({ PaymentsPage }) => ({ default: PaymentsPage })))
-const RemindersPage = lazy(() => import('./pages/Operations').then(({ RemindersPage }) => ({ default: RemindersPage })))
-const ReportsPage = lazy(() => import('./pages/Operations').then(({ ReportsPage }) => ({ default: ReportsPage })))
-const SettingsPage = lazy(() => import('./pages/Operations').then(({ SettingsPage }) => ({ default: SettingsPage })))
-const BackupPage = lazy(() => import('./pages/Operations').then(({ BackupPage }) => ({ default: BackupPage })))
+// Dashboard is the default route; start its shared chunk while authentication resolves.
+const operationsModule = import('./pages/Operations')
+const DashboardPage = lazy(() => operationsModule.then(({ DashboardPage }) => ({ default: DashboardPage })))
+const ExpensesPage = lazy(() => operationsModule.then(({ ExpensesPage }) => ({ default: ExpensesPage })))
+const InvoicesPage = lazy(() => operationsModule.then(({ InvoicesPage }) => ({ default: InvoicesPage })))
+const PaymentsPage = lazy(() => operationsModule.then(({ PaymentsPage }) => ({ default: PaymentsPage })))
+const RemindersPage = lazy(() => operationsModule.then(({ RemindersPage }) => ({ default: RemindersPage })))
+const ReportsPage = lazy(() => operationsModule.then(({ ReportsPage }) => ({ default: ReportsPage })))
+const SettingsPage = lazy(() => operationsModule.then(({ SettingsPage }) => ({ default: SettingsPage })))
+const BackupPage = lazy(() => operationsModule.then(({ BackupPage }) => ({ default: BackupPage })))
 
 type ServiceType = 'cable' | 'broadband'
 const navigation = [['Dashboard', LayoutDashboard], ['Subscribers', Users], ['Plans', Package], ['Invoices', FileText], ['Payments', Wallet], ['Reports', BarChart3], ['Expenses', CircleDollarSign], ['Reminders', Bell], ['Settings', Settings], ['Manual Backup', HardDriveDownload]] as const
