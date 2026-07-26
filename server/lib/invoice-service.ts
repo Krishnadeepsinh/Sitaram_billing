@@ -41,13 +41,14 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
   const requestedStart = parseStrictDate(input.periodStart ?? expectedPeriodStart)
   if (billingMode === 'normal') {
     if (row.status !== 'active' || !row.plan_id || row.price_paise === null || Number(row.plan_is_active) !== 1) throw new InvoiceRequestError(400, 'Customer must be active and have an active plan before renewal billing.')
-    if (expectedPeriodStart !== currentNextStart || requestedStart !== currentNextStart) {
+    if (expectedPeriodStart !== currentNextStart) {
       const expectedPeriod = createInvoicePeriod(expectedPeriodStart, input.monthsBilled)
       const existing = await transaction.execute({ sql: `SELECT id, invoice_code AS invoiceCode, period_start AS periodStart, period_end AS periodEnd
         FROM invoices WHERE customer_id = ? AND service_type = ? AND period_start = ? AND period_end = ? AND months_billed = ? AND billing_mode = 'normal' AND is_deleted = 0 AND is_merged = 0 LIMIT 1`, args: [input.customerId, input.serviceType, expectedPeriod.periodStart, expectedPeriod.periodEnd, input.monthsBilled] })
       if (existing.rows[0]) return { invoiceId: Number(existing.rows[0].id), invoiceCode: String(existing.rows[0].invoiceCode), periodStart: String(existing.rows[0].periodStart), periodEnd: String(existing.rows[0].periodEnd), nextEligibleDate: nextEligibleBillingDate(String(existing.rows[0].periodEnd)), replayed: true }
       throw new InvoiceRequestError(409, `Billing position changed. The next eligible start date is ${currentNextStart}.`, { nextEligibleDate: currentNextStart })
     }
+    if (requestedStart < currentNextStart) throw new InvoiceRequestError(409, `Normal renewal cannot start before ${currentNextStart}. Use Historical Gap for an older uncovered period.`, { nextEligibleDate: currentNextStart })
   }
 
   const period = createInvoicePeriod(requestedStart, input.monthsBilled)
