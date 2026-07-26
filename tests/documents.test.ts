@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
-import { createPdfBytes, shareInvoice } from '../src/lib/documents'
-import type { BusinessSettings, InvoiceDetail } from '../src/lib/api'
+import { createPdfBytes, shareInvoice, statementPdfBytes } from '../src/lib/documents'
+import type { BusinessSettings, Customer, InvoiceDetail, Payment } from '../src/lib/api'
 
 const settings: BusinessSettings = { businessName: 'Sitaram Billing', address: 'Bhavnagar', phoneNumbers: '9825039825', upiId: 'sitaram@ybl', logoUrl: null }
 const invoice: InvoiceDetail = {
@@ -40,6 +40,21 @@ describe('PDF generation', () => {
     const serialized = new TextDecoder('latin1').decode(bytes)
     expect(serialized).toMatch(/\/Helvetica-\d{1,4}\b/)
     expect(serialized).not.toMatch(/\/Helvetica-\d{8,}\b/)
+  })
+
+  it('creates a customer statement with invoices, payments, and references', async () => {
+    const documentFont = await readFile(new URL('../src/assets/NotoSansGujarati-Regular.ttf', import.meta.url))
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => String(url).includes('NotoSansGujarati') ? new Response(documentFont) : new Response(null, { status: 404 })))
+    const customer = {
+      id: 1, sortOrder: 1, customerCode: 'CUST-001', name: 'Test Customer', phone: '9999999999', stbNumber: 'STB-1', status: 'active',
+      nextBillingStartDate: '2026-08-18', installationDate: '2026-01-01', areaId: 1, planId: 1, areaName: 'Bhavnagar', planName: 'FTA', planPricePaise: 20000, planIsActive: 1,
+      amountDuePaise: 20000, previousDuePaise: 0, currentPlanDuePaise: 20000, futurePlanDuePaise: 0, unbilledOpeningDuePaise: 0, creditBalancePaise: 0,
+      openInvoiceCount: 1, oldestDuePeriodStart: '2026-07-19', latestDuePeriodEnd: '2026-08-17', latestPeriodStart: '2026-07-19', latestPeriodEnd: '2026-08-17',
+      duePlanPeriodStart: '2026-07-19', duePlanCycleEndStart: '2026-07-19', coverageStatus: 'active', hasHistoricalGap: 0,
+    } as Customer
+    const payment = { id: 1, paymentCode: 'PAY-001', customerId: 1, customerName: 'Test Customer', paymentDate: '2026-07-20', amountReceivedPaise: 20000, discountGivenPaise: 0, settledAmountPaise: 20000, paymentMode: 'upi', paymentReference: 'UTR-123', resultingStatus: 'settled' } as Payment
+    const bytes = await statementPdfBytes(customer, [invoice], [payment], settings)
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBeGreaterThanOrEqual(1)
   })
 
   it('uses the native file share path when supported', async () => {

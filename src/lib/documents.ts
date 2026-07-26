@@ -4,7 +4,7 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import QRCode from 'qrcode'
 import { toWords } from 'number-to-words'
 import gujaratiFontUrl from '../assets/NotoSansGujarati-Regular.ttf?url'
-import type { BusinessSettings, InvoiceDetail, PaymentDetail, Report } from './api'
+import type { BusinessSettings, Customer, Invoice, InvoiceDetail, Payment, PaymentDetail, Report } from './api'
 import { billingCyclePosition, formatBusinessDate } from './date'
 
 type Row = { label: string; value: string }
@@ -235,7 +235,7 @@ async function createStatementPdf(variant: StatementVariant, data: StatementData
   else {
     const payment = data as PaymentDetail
     const discountPaise = Number(payment.discountGivenPaise || 0)
-    const paymentFields: Array<[string, string]> = [['Payment mode', payment.paymentMode.toUpperCase()], ['Amount received', rupee(Number(payment.amountReceivedPaise))], ...(discountPaise > 0 ? [['Discount given', rupee(discountPaise)] as [string, string]] : []), ['Settled amount', rupee(Number(payment.settledAmountPaise || payment.amountReceivedPaise + discountPaise))], ['Transaction', 'CONFIRMED']]
+    const paymentFields: Array<[string, string]> = [['Payment mode', payment.paymentMode.toUpperCase()], ...(payment.paymentReference ? [['UTR / reference', payment.paymentReference] as [string, string]] : []), ['Amount received', rupee(Number(payment.amountReceivedPaise))], ...(discountPaise > 0 ? [['Discount given', rupee(discountPaise)] as [string, string]] : []), ['Settled amount', rupee(Number(payment.settledAmountPaise || payment.amountReceivedPaise + discountPaise))], ['Transaction', 'CONFIRMED']]
     const customerFields: Array<[string, string]> = [['Full Name', payment.customerName], ...(payment.customerCode ? [['Customer ID', payment.customerCode] as [string, string]] : []), ...(payment.stbNumber ? [['STB', payment.stbNumber] as [string, string]] : []), ...(payment.phone ? [['Mobile No', payment.phone] as [string, string]] : []), ['Area', payment.areaName], ['Service Type', serviceLabel], ['Transaction ID', payment.paymentCode]]
     drawCard(30, 270, 'PAYMENT DETAILS', paymentFields); drawCard(315, 250, 'CUSTOMER DETAILS', customerFields)
     y -= 204; draw('PAYMENT ALLOCATION DETAILS', 30, y, 9, true, rgb(.05, .63, .28)); y -= 18
@@ -257,11 +257,29 @@ export async function reportPdfBytes(report: Report, settings: BusinessSettings)
   const rows: Row[] = [{ label: 'Report period', value: `${formatBusinessDate(report.from)} to ${formatBusinessDate(report.to)}` }, { label: 'Scope', value: report.scope.toUpperCase() }, { label: 'Billed', value: pdfMoney(report.billedPaise) }, { label: 'Collected', value: pdfMoney(report.collectedPaise) }, { label: 'Discount given', value: pdfMoney(report.discountGivenPaise) }, { label: 'Expenses', value: pdfMoney(report.expensePaise) }, { label: 'Outstanding', value: pdfMoney(report.outstandingPaise) }, { label: report.netLabel, value: pdfMoney(report.netPaise) }, { label: 'Active subscribers', value: String(report.activeSubscribers) }, { label: 'Subscriber records needing setup', value: String(report.dataQualityCount) }, ...report.payments.map((payment) => ({ label: payment.paymentCode, value: `${formatBusinessDate(payment.paymentDate)} | ${payment.customerName} | Received ${pdfMoney(payment.amountReceivedPaise)} | Discount ${pdfMoney(payment.discountGivenPaise)} | ${payment.paymentMode}` })), ...report.expenses.map((expense) => ({ label: `Expense ${expense.category}`, value: `${formatBusinessDate(expense.expenseDate)} | ${expense.description} | ${pdfMoney(expense.amountPaise)}` }))]
   return createPdfBytes('BUSINESS REPORT', report.scope.toUpperCase(), rows, settings)
 }
+export async function statementPdfBytes(customer: Customer, invoices: Invoice[], payments: Payment[], settings: BusinessSettings) {
+  const balance = customer.amountDuePaise - customer.creditBalancePaise
+  const rows: Row[] = [
+    { label: 'Customer', value: `${customer.name} (${customer.customerCode})` },
+    { label: 'Phone', value: customer.phone || '—' },
+    { label: 'Area / STB', value: `${customer.areaName} / ${customer.stbNumber || '—'}` },
+    { label: 'Plan', value: customer.planName || '—' },
+    { label: 'Current balance', value: pdfMoney(Math.max(0, balance)) },
+    { label: 'Advance credit', value: pdfMoney(customer.creditBalancePaise) },
+    { label: 'Service coverage', value: customer.latestPeriodEnd ? (customer.latestPeriodStart ? `${formatBusinessDate(customer.latestPeriodStart)} to ${formatBusinessDate(customer.latestPeriodEnd)}` : `Through ${formatBusinessDate(customer.latestPeriodEnd)}`) : 'Not billed yet' },
+    { label: 'Next billing start', value: customer.nextBillingStartDate ? formatBusinessDate(customer.nextBillingStartDate) : 'Not configured' },
+    { label: 'Invoice history', value: invoices.length ? invoices.map((invoice) => `${invoice.invoiceCode}: ${formatBusinessDate(invoice.periodStart)} to ${formatBusinessDate(invoice.periodEnd)} | ${pdfMoney(invoice.totalPayablePaise)} | ${invoice.status}`).join('\n') : 'No invoices recorded' },
+    { label: 'Payment history', value: payments.length ? payments.map((payment) => `${payment.paymentCode}: ${formatBusinessDate(payment.paymentDate)} | ${pdfMoney(payment.amountReceivedPaise)} | ${payment.paymentMode.toUpperCase()}${payment.paymentReference ? ` | Ref ${payment.paymentReference}` : ''}`).join('\n') : 'No payments recorded' },
+  ]
+  return createPdfBytes('CUSTOMER STATEMENT', customer.customerCode, rows, settings)
+}
 export function pdfPreviewUrl(bytes: Uint8Array) { return URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' })) }
 export async function downloadInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { saveBytes(`${invoice.invoiceCode}.pdf`, await invoicePdfBytes(invoice, settings)) }
 export async function shareInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { await shareOrDownload(`${invoice.invoiceCode}.pdf`, `${settings.businessName} invoice ${invoice.invoiceCode}`, await invoicePdfBytes(invoice, settings)) }
 export async function downloadReceipt(payment: PaymentDetail, settings: BusinessSettings) { saveBytes(`${payment.paymentCode}.pdf`, await receiptPdfBytes(payment, settings)) }
 export async function shareReceipt(payment: PaymentDetail, settings: BusinessSettings) { await shareOrDownload(`${payment.paymentCode}.pdf`, `${settings.businessName} receipt ${payment.paymentCode}`, await receiptPdfBytes(payment, settings)) }
+export async function downloadStatement(customer: Customer, invoices: Invoice[], payments: Payment[], settings: BusinessSettings) { saveBytes(`${customer.customerCode}-statement.pdf`, await statementPdfBytes(customer, invoices, payments, settings)) }
+export async function shareStatement(customer: Customer, invoices: Invoice[], payments: Payment[], settings: BusinessSettings) { await shareOrDownload(`${customer.customerCode}-statement.pdf`, `${settings.businessName} statement ${customer.customerCode}`, await statementPdfBytes(customer, invoices, payments, settings)) }
 
 export async function downloadReportPdf(report: Report, settings: BusinessSettings) {
   saveBytes(`sitaram-report-${report.from}-${report.to}.pdf`, await reportPdfBytes(report, settings))

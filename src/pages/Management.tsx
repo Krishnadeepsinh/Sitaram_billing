@@ -40,6 +40,7 @@ import {
   listAreas,
   listCustomers,
   listPlans,
+  getSettings,
   restoreCustomer,
   updateArea,
   updateCustomer,
@@ -58,6 +59,7 @@ import { downloadCsv } from "../lib/csv";
 import { customerDueLabel, duePlanPeriodLabel } from "../lib/billing";
 
 type Notice = { kind: "success" | "error"; message: string } | undefined;
+const documents = () => import("../lib/documents");
 
 function formatDuePeriod(customer: Customer) {
   if (!customer.oldestDuePeriodStart || !customer.latestDuePeriodEnd)
@@ -669,6 +671,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
         amountReceivedPaise: rupeesToPaise(String(data.get("amount"))),
         discountGivenPaise: rupeesToPaise(String(data.get("discount") || "0")),
         paymentMode: data.get("paymentMode") === "upi" ? "upi" : "cash",
+        paymentReference: String(data.get("paymentReference") || "").trim() || undefined,
         notes: String(data.get("notes") || "") || undefined,
         requestKey: paymentRequestKey,
       });
@@ -779,6 +782,22 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
       )
       .finally(() => setSummaryLoading(false));
   };
+  async function shareStatement() {
+    if (!summary || !summaryHistory) return;
+    setSubmitting(true);
+    try {
+      const settings = await getSettings();
+      if (!settings) throw new Error("Complete business settings before sharing a statement.");
+      await documents().then(({ shareStatement: share }) =>
+        share(summary, summaryHistory.invoices, summaryHistory.payments, settings),
+      );
+      setNotice({ kind: "success", message: `Statement prepared for ${summary.name}.` });
+    } catch (error) {
+      setNotice({ kind: "error", message: error instanceof Error ? error.message : "Unable to share statement." });
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <section className="page-content">
@@ -1534,6 +1553,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                         </div>
                         <div className="ledger-details">
                           <span>Received {formatRupees(entry.payment.amountReceivedPaise)}</span>
+                          {entry.payment.paymentReference ? <span>Reference {entry.payment.paymentReference}</span> : null}
                           {entry.payment.discountGivenPaise > 0 ? <span>Discount {formatRupees(entry.payment.discountGivenPaise)}</span> : null}
                           {entry.payment.allocations?.map((allocation) => {
                             const amount = allocation.cashPaise + allocation.discountPaise + allocation.creditPaise
@@ -1550,6 +1570,13 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               )}
             </div>
             <div className="modal-actions">
+              <button
+                className="secondary"
+                disabled={submitting || summaryLoading || !summaryHistory}
+                onClick={() => void shareStatement()}
+              >
+                <FileText size={16} /> Share Statement
+              </button>
               <button
                 className="secondary"
                 onClick={() => {
@@ -1694,6 +1721,18 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
             <p className="form-help full-field">
               The discount reduces the amount received and settles invoice dues
               only. It never creates advance credit.
+            </p>
+            <label className="full-field">
+              UTR / Payment Reference
+              <input
+                name="paymentReference"
+                autoComplete="off"
+                maxLength={120}
+                placeholder="Recommended for UPI or bank transfer"
+              />
+            </label>
+            <p className="form-help full-field">
+              The admin confirms the payment. A repeated UTR is blocked to prevent double entry.
             </p>
             <label className="full-field">
               Notes

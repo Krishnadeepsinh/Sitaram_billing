@@ -1162,6 +1162,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
         amountReceivedPaise: rupeesToPaise(String(data.get("amount"))),
         discountGivenPaise: rupeesToPaise(String(data.get("discount") || "0")),
         paymentMode: data.get("paymentMode") === "upi" ? "upi" : "cash",
+        paymentReference: String(data.get("paymentReference") || "").trim() || undefined,
         notes: String(data.get("notes")) || undefined,
         requestKey: paymentRequestKey,
       });
@@ -1393,6 +1394,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                         <small>
                           <Status>{payment.resultingStatus}</Status>
                         </small>
+                        {payment.paymentReference ? <small>Ref {payment.paymentReference}</small> : null}
                       </td>
                       <td data-label="Customer">{payment.customerName}</td>
                       <td data-label="Date">
@@ -1561,6 +1563,18 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                 </select>
               </label>
             </div>
+            <label>
+              UTR / Payment Reference
+              <input
+                name="paymentReference"
+                maxLength={120}
+                autoComplete="off"
+                placeholder="Recommended for UPI or bank transfer"
+              />
+            </label>
+            <p className="form-help">
+              Enter the UTR or transaction reference when available. The system will warn if it was already recorded.
+            </p>
             <label>
               Amount Received (₹) *
               <input
