@@ -363,7 +363,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
   const [notice, setNotice] = useState<Notice>();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [billingDialog, setBillingDialog] = useState<"single" | "bulk">();
+  const [billingDialog, setBillingDialog] = useState<"single" | "bulk" | "due">();
   const [invoiceTotal, setInvoiceTotal] = useState(0);
   const [invoiceOffset, setInvoiceOffset] = useState(0);
   const [bulkSelection, setBulkSelection] = useState<number[]>([]);
@@ -417,6 +417,9 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
       customer.planIsActive &&
       customer.installationDate &&
       customer.nextBillingStartDate,
+  );
+  const dueBillable = billable.filter(
+    (customer) => customer.nextBillingStartDate! <= today,
   );
 
   async function submitBulk(event: FormEvent<HTMLFormElement>) {
@@ -585,6 +588,21 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
             </button>
             <button
               className="primary"
+              disabled={!dueBillable.length || submitting}
+              title={
+                dueBillable.length
+                  ? "Generate complete cycles for subscribers due today or earlier"
+                  : "No subscribers are due for billing"
+              }
+              onClick={() => {
+                setBulkSelection(dueBillable.map((customer) => customer.id));
+                setBillingDialog("due");
+              }}
+            >
+              <CalendarDays size={16} /> Generate Due Invoices
+            </button>
+            <button
+              className="secondary"
               onClick={() => setBillingDialog("single")}
             >
               <FilePlus2 size={16} /> New Invoice
@@ -892,8 +910,11 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
           />
         </Modal>
       )}
-      {billingDialog === "bulk" && (
-        <Modal title="Bulk Billing" onClose={() => setBillingDialog(undefined)}>
+      {(billingDialog === "bulk" || billingDialog === "due") && (
+        <Modal
+          title={billingDialog === "due" ? "Generate Due Invoices" : "Bulk Billing"}
+          onClose={() => setBillingDialog(undefined)}
+        >
           <form className="modal-form single-column" onSubmit={submitBulk}>
             <label>
               Bill Complete Cycles Through *
@@ -937,8 +958,9 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
               </div>
             </fieldset>
             <p className="form-help">
-              Leave every customer unchecked to bill all eligible customers.
-              Existing periods and incomplete cycles are skipped safely.
+              {billingDialog === "due"
+                ? "Only active subscribers due today or earlier are selected. Future billing dates are excluded. Existing periods and incomplete cycles are skipped safely."
+                : "Leave every customer unchecked to bill all eligible customers. Existing periods and incomplete cycles are skipped safely."}
             </p>
             <div className="modal-actions">
               <button
