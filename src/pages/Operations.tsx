@@ -133,11 +133,14 @@ export function DashboardPage({
           <p className="eyebrow">Live billing control</p>
           <h2>Dashboard</h2>
           <p className="dashboard-period">{formatBusinessDate(range.from)} → {formatBusinessDate(range.to)}</p>
-          <p>
-            {report.dataQualityCount
-              ? `${report.dataQualityCount} subscriber record(s) need billing setup.`
-              : "All active subscriber records are ready for billing."}
-          </p>
+          <div className="dashboard-context" aria-label="Workspace status">
+            <span><strong>{report.activeSubscribers}</strong> active subscribers</span>
+            <span className={report.dataQualityCount ? "needs-attention" : "ready"}>
+              {report.dataQualityCount
+                ? `${report.dataQualityCount} need billing setup`
+                : "Billing setup complete"}
+            </span>
+          </div>
         </div>
         <div className="dashboard-range">
           <label>
@@ -220,13 +223,6 @@ export function DashboardPage({
           label="Pending dues"
           value={formatRupees(report.outstandingPaise)}
           hint="Action required"
-        />
-        <Metric
-          icon={<Users />}
-          tone="blue"
-          label="Active subscribers"
-          value={String(report.activeSubscribers)}
-          hint="Currently active records"
         />
       </section>
       <section className="quick-actions" aria-label="Quick actions">
@@ -569,7 +565,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
         title="Invoices"
         subtitle="Manage 30-day service coverage, billing, and payment collections."
         action={
-          <div className="page-actions">
+          <div className="page-actions invoice-page-actions">
             <button
               className="secondary"
               disabled={submitting}
@@ -599,7 +595,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                 setBillingDialog("due");
               }}
             >
-              <CalendarDays size={16} /> Generate Due Invoices
+              <CalendarDays size={16} /> Bill All Due
             </button>
             <button
               className="secondary"

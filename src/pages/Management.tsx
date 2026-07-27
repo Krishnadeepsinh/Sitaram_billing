@@ -805,7 +805,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
         title="Subscribers"
         subtitle="Manage subscriber status, 30-day coverage, billing, and collections."
         action={
-          <div className="page-actions">
+          <div className="page-actions subscriber-page-actions">
             <button className="secondary" onClick={exportSubscribers}>
               <Download size={16} />
               {selectedCustomerIds.size
