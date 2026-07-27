@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
-import { createPdfBytes, invoicePaymentUri, receiptPdfBytes, shareInvoice, statementPdfBytes } from '../src/lib/documents'
+import { createPdfBytes, invoiceDisplayBreakdown, invoicePaymentUri, paymentDisplayBreakdown, receiptPdfBytes, shareInvoice, statementPdfBytes } from '../src/lib/documents'
 import type { BusinessSettings, Customer, InvoiceDetail, Payment, PaymentDetail } from '../src/lib/api'
 
 const settings: BusinessSettings = { businessName: 'Sitaram Billing', address: 'Bhavnagar', phoneNumbers: '9825039825', upiId: 'sitaram@ybl', logoUrl: null }
@@ -79,6 +79,44 @@ describe('PDF generation', () => {
     expect(parsed.searchParams.get('tn')).toBe('Invoice INV-001')
     expect(parsed.searchParams.get('tr')).toBe('INV-001')
     expect(invoicePaymentUri({ ...invoice, liveBalancePaise: 0 }, settings)).toBeNull()
+  })
+
+  it('shows payments and discounts separately from the amount left to pay', () => {
+    const partialInvoice: InvoiceDetail = {
+      ...invoice,
+      currentPeriodAmountPaise: 20000,
+      previousDueSnapshotPaise: 5000,
+      totalPayablePaise: 25000,
+      liveBalancePaise: 15000,
+      status: 'partial',
+      allocations: [{ paymentCode: 'PAY-100', paymentDate: '2026-07-20', periodStart: invoice.periodStart, periodEnd: invoice.periodEnd, cashPaise: 10000, discountPaise: 0, creditPaise: 0 }],
+    }
+    expect(invoiceDisplayBreakdown(partialInvoice)).toEqual({
+      monthlyServicePaise: 20000,
+      oldUnpaidPaise: 5000,
+      totalBillPaise: 25000,
+      paymentReceivedPaise: 10000,
+      discountGivenPaise: 0,
+      customerCreditUsedPaise: 0,
+      amountLeftPaise: 15000,
+    })
+  })
+
+  it('keeps receipt payment, discount, covered amount, and unpaid amount distinct', () => {
+    const payment = {
+      amountReceivedPaise: 10000,
+      discountGivenPaise: 2000,
+      settledAmountPaise: 12000,
+      liveBalancePaise: 13000,
+      allocations: [{ invoiceCode: 'INV-001', periodStart: invoice.periodStart, periodEnd: invoice.periodEnd, cashPaise: 10000, discountPaise: 2000, creditPaise: 0 }],
+    } as PaymentDetail
+    expect(paymentDisplayBreakdown(payment)).toEqual({
+      paymentReceivedPaise: 10000,
+      discountGivenPaise: 2000,
+      customerCreditUsedPaise: 0,
+      totalBillCoveredPaise: 12000,
+      amountStillUnpaidPaise: 13000,
+    })
   })
 
   it('uses the native file share path when supported', async () => {
