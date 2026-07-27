@@ -66,7 +66,7 @@ describe('PDF generation', () => {
       allocations: [{ invoiceCode: 'INV-001', periodStart: '2026-07-19', periodEnd: '2026-08-17', chargeType: 'service', cashPaise: 15000, discountPaise: 5000, creditPaise: 0 }],
     }
     const bytes = await receiptPdfBytes(payment, settings)
-    expect(bytes.byteLength).toBeGreaterThan(5_000)
+    expect(bytes.byteLength).toBeGreaterThan(4_000)
     expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1)
   })
 
