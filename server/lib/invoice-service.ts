@@ -39,6 +39,8 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
   const expectedPeriodStart = parseStrictDate(input.expectedPeriodStart)
   const currentNextStart = parseStrictDate(String(row.next_billing_start_date))
   const requestedStart = parseStrictDate(input.periodStart ?? expectedPeriodStart)
+  const invoiceCount = await transaction.execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ? AND is_deleted = 0', args: [input.customerId] })
+  const hasInvoiceHistory = Number(invoiceCount.rows[0].count) > 0
   if (billingMode === 'normal') {
     if (row.status !== 'active' || !row.plan_id || row.price_paise === null || Number(row.plan_is_active) !== 1) throw new InvoiceRequestError(400, 'Customer must be active and have an active plan before renewal billing.')
     if (expectedPeriodStart !== currentNextStart) {
@@ -48,7 +50,7 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
       if (existing.rows[0]) return { invoiceId: Number(existing.rows[0].id), invoiceCode: String(existing.rows[0].invoiceCode), periodStart: String(existing.rows[0].periodStart), periodEnd: String(existing.rows[0].periodEnd), nextEligibleDate: nextEligibleBillingDate(String(existing.rows[0].periodEnd)), replayed: true }
       throw new InvoiceRequestError(409, `Billing position changed. The next eligible start date is ${currentNextStart}.`, { nextEligibleDate: currentNextStart })
     }
-    if (requestedStart < currentNextStart) throw new InvoiceRequestError(409, `Normal renewal cannot start before ${currentNextStart}. Use Historical Gap for an older uncovered period.`, { nextEligibleDate: currentNextStart })
+    if (hasInvoiceHistory && requestedStart < currentNextStart) throw new InvoiceRequestError(409, `Normal renewal cannot start before ${currentNextStart}. Use Historical Gap for an older uncovered period.`, { nextEligibleDate: currentNextStart })
   }
 
   const period = createInvoicePeriod(requestedStart, input.monthsBilled)
@@ -93,7 +95,6 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
     FROM invoices JOIN (SELECT invoice_id, SUM(amount_paise) AS total FROM invoice_charges GROUP BY invoice_id) charges ON charges.invoice_id = invoices.id
     LEFT JOIN (SELECT invoice_id, SUM(amount_cash_paise + amount_discount_paise + amount_credit_paise) AS settled FROM payment_allocations WHERE is_deleted = 0 GROUP BY invoice_id) allocations ON allocations.invoice_id = invoices.id
     WHERE invoices.customer_id = ? AND invoices.is_deleted = 0 AND invoices.is_merged = 0`, args: [input.customerId] })
-  const invoiceCount = await transaction.execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ? AND is_deleted = 0', args: [input.customerId] })
   const openingDue = Number(invoiceCount.rows[0].count) === 0 && row.opening_balance_type === 'due' ? Number(row.opening_balance_paise) : 0
   const previousDue = Number(outstanding.rows[0].due) + openingDue
   const now = new Date().toISOString()
