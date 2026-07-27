@@ -443,7 +443,11 @@ export async function statementPdfBytes(customer: Customer, invoices: Invoice[],
   ]
   return createPdfBytes('CUSTOMER STATEMENT', customer.customerCode, rows, settings)
 }
-export function pdfPreviewUrl(bytes: Uint8Array) { return URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' })) }
+export function pdfPreviewUrl(bytes: Uint8Array) {
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
+  return `data:application/pdf;base64,${btoa(binary)}`
+}
 export async function downloadInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { saveBytes(`${invoice.invoiceCode}.pdf`, await invoicePdfBytes(invoice, settings)) }
 export async function shareInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { await shareOrDownload(`${invoice.invoiceCode}.pdf`, `${settings.businessName} invoice ${invoice.invoiceCode}`, await invoicePdfBytes(invoice, settings)) }
 export async function downloadReceipt(payment: PaymentDetail, settings: BusinessSettings) { saveBytes(`${payment.paymentCode}.pdf`, await receiptPdfBytes(payment, settings)) }
