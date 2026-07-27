@@ -1,12 +1,12 @@
 import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
-import { createPdfBytes, shareInvoice, statementPdfBytes } from '../src/lib/documents'
-import type { BusinessSettings, Customer, InvoiceDetail, Payment } from '../src/lib/api'
+import { createPdfBytes, invoicePaymentUri, receiptPdfBytes, shareInvoice, statementPdfBytes } from '../src/lib/documents'
+import type { BusinessSettings, Customer, InvoiceDetail, Payment, PaymentDetail } from '../src/lib/api'
 
 const settings: BusinessSettings = { businessName: 'Sitaram Billing', address: 'Bhavnagar', phoneNumbers: '9825039825', upiId: 'sitaram@ybl', logoUrl: null }
 const invoice: InvoiceDetail = {
-  id: 1, invoiceCode: 'INV-001', customerId: 1, customerCode: 'CUST-001', customerName: 'Test Customer', areaName: 'Bhavnagar', planName: 'FTA', stbNumber: 'STB-1',
+  id: 1, invoiceCode: 'INV-001', customerId: 1, serviceType: 'cable', customerCode: 'CUST-001', customerName: 'Test Customer', areaName: 'Bhavnagar', planName: 'FTA', stbNumber: 'STB-1',
   periodStart: '2026-07-19', periodEnd: '2026-08-17', issuedDate: '2026-07-19', monthsBilled: 1, currentPeriodAmountPaise: 20000,
   previousDueSnapshotPaise: 0, totalPayablePaise: 20000, chargeAmountPaise: 20000, dueDate: '2026-08-24', status: 'unpaid', billingMode: 'normal', historicalReason: null,
   liveBalancePaise: 20000, currentCustomerDuePaise: 20000, charges: [{ chargeType: 'service', description: 'FTA service charge', amountPaise: 20000 }], allocations: [], mergeItems: [],
@@ -55,6 +55,30 @@ describe('PDF generation', () => {
     const payment = { id: 1, paymentCode: 'PAY-001', customerId: 1, customerName: 'Test Customer', paymentDate: '2026-07-20', amountReceivedPaise: 20000, discountGivenPaise: 0, settledAmountPaise: 20000, paymentMode: 'upi', paymentReference: 'UTR-123', resultingStatus: 'settled' } as Payment
     const bytes = await statementPdfBytes(customer, [invoice], [payment], settings)
     expect((await PDFDocument.load(bytes)).getPageCount()).toBeGreaterThanOrEqual(1)
+  })
+
+  it('creates a valid receipt with payment reference, allocation, and live balance', async () => {
+    const documentFont = await readFile(new URL('../src/assets/NotoSansGujarati-Regular.ttf', import.meta.url))
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => String(url).includes('NotoSansGujarati') ? new Response(documentFont) : new Response(null, { status: 404 })))
+    const payment: PaymentDetail = {
+      id: 1, paymentCode: 'PAY-001', customerId: 1, customerName: 'Test Customer', customerCode: 'CUST-001', phone: '9999999999', stbNumber: 'STB-1', areaName: 'Long Customer Area Near Main Road', serviceType: 'cable',
+      paymentDate: '2026-07-20', amountReceivedPaise: 15000, discountGivenPaise: 5000, settledAmountPaise: 20000, paymentMode: 'upi', paymentReference: 'UTR-123456789', resultingStatus: 'settled', liveBalancePaise: 0, notes: 'Checked and recorded by administrator.',
+      allocations: [{ invoiceCode: 'INV-001', periodStart: '2026-07-19', periodEnd: '2026-08-17', chargeType: 'service', cashPaise: 15000, discountPaise: 5000, creditPaise: 0 }],
+    }
+    const bytes = await receiptPdfBytes(payment, settings)
+    expect(bytes.byteLength).toBeGreaterThan(5_000)
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1)
+  })
+
+  it('prefills the exact balance and invoice reference in the UPI QR payload', () => {
+    const uri = invoicePaymentUri(invoice, settings)
+    expect(uri).not.toBeNull()
+    const parsed = new URL(uri!)
+    expect(parsed.searchParams.get('pa')).toBe('sitaram@ybl')
+    expect(parsed.searchParams.get('am')).toBe('200.00')
+    expect(parsed.searchParams.get('tn')).toBe('Invoice INV-001')
+    expect(parsed.searchParams.get('tr')).toBe('INV-001')
+    expect(invoicePaymentUri({ ...invoice, liveBalancePaise: 0 }, settings)).toBeNull()
   })
 
   it('uses the native file share path when supported', async () => {

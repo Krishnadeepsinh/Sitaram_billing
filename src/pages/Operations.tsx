@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -78,6 +77,7 @@ import {
   paymentAmountAfterDiscount,
   rupeesToPaise,
 } from "../lib/money";
+import { useDebouncedValue } from "../lib/hooks";
 import { InvoiceForm } from "../components/InvoiceForm";
 import { downloadCsv } from "../lib/csv";
 
@@ -373,11 +373,11 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
     from: "",
     to: "",
   });
-  const deferredQuery = useDeferredValue(query);
+  const deferredQuery = useDebouncedValue(query, 300);
   const refresh = useCallback(() => {
     setLoading(true);
     Promise.all([
-      listCustomers(serviceType),
+      listCustomers(serviceType, '', false, { limit: 500 }),
       listAreas(serviceType),
       listInvoices(
         serviceType,
@@ -389,7 +389,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
       getSettings(),
     ])
       .then(([nextCustomers, nextAreas, nextInvoices, nextSettings]) => {
-        setCustomers(nextCustomers);
+        setCustomers(nextCustomers.items);
         setAreas(nextAreas);
         setInvoices(nextInvoices.items);
         setInvoiceTotal(nextInvoices.total);
@@ -1095,7 +1095,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
   const [paymentRequestKey, setPaymentRequestKey] = useState(() =>
     crypto.randomUUID(),
   );
-  const deferredPaymentQuery = useDeferredValue(filters.query);
+  const deferredPaymentQuery = useDebouncedValue(filters.query, 300);
   const paymentRequestFilters = useMemo(
     () => ({
       query: deferredPaymentQuery,
@@ -1115,12 +1115,12 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
   const refresh = useCallback(() => {
     setLoading(true);
     Promise.all([
-      listCustomers(serviceType),
+      listCustomers(serviceType, '', false, { limit: 500 }),
       listPayments(serviceType, paymentRequestFilters),
       getSettings(),
     ])
       .then(([active, nextPayments, nextSettings]) => {
-        setCustomers(active);
+        setCustomers(active.items);
         setPayments(nextPayments.items);
         setPaymentTotal(nextPayments.total);
         setSettings(nextSettings ?? undefined);
@@ -2294,8 +2294,8 @@ export function RemindersPage({ serviceType }: { serviceType: ServiceType }) {
   const [error, setError] = useState("");
   const today = todayInBusinessTimezone();
   useEffect(() => {
-    listCustomers(serviceType)
-      .then(setCustomers)
+    listCustomers(serviceType, '', false, { limit: 500 })
+      .then((result) => setCustomers(result.items))
       .catch((cause: Error) => setError(cause.message));
   }, [serviceType]);
   const actionable = customers.filter(
@@ -2696,6 +2696,7 @@ function PaymentDetailView({ payment }: { payment: PaymentDetail }) {
         label="Amount received"
         value={formatRupees(payment.amountReceivedPaise)}
       />
+      <Detail label="UTR / payment reference" value={payment.paymentReference || "—"} />
       <Detail
         label="Discount"
         value={formatRupees(payment.discountGivenPaise)}

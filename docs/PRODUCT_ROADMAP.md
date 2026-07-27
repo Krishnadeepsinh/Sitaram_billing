@@ -12,6 +12,15 @@ The app should shorten the admin's daily work without becoming an ISP network-ma
 
 These are the hard accounting foundations. The next gains should come from faster daily operation, not a larger accounting model.
 
+## Implemented from the old-app and peer review
+
+- **Safe bulk subscriber cleanup:** select any subscribers on the current page, export them, or archive them together from a floating action bar. The archive is transactional (all selected records succeed or none do), audited per subscriber, reversible, and retains every invoice and payment. The old app's permanent cascade deletion was intentionally not copied.
+- **Customer-ready invoice:** the invoice now separates total at issue from the live balance due, wraps long customer and address fields, and gives the customer one unambiguous payment reference.
+- **Contextual UPI QR:** the QR pre-fills the exact live balance, business name, currency, invoice number, and transaction note. It helps the customer identify what they paid for but never marks the invoice paid; the admin still verifies and records the payment.
+- **Customer-ready receipt:** the receipt shows the admin-recorded status, UTR/reference, amount received, discount, amount settled, invoice allocation, coverage period, and balance remaining. Long notes and addresses wrap without colliding with other fields.
+- **Reusable document QA:** `pnpm render:documents` produces sample invoice and receipt PDFs for visual checks; approved PNG previews are stored beside them so future document changes can be compared before release.
+- **Focused interaction polish:** the old app's useful floating selection pattern and restrained entrance motion were adapted to the current responsive design without reintroducing its dense controls or unsafe destructive behavior.
+
 ## Recommended priorities
 
 ### Now — highest value and lowest complexity
@@ -85,7 +94,7 @@ Each adds operational and support burden without improving this single-admin rec
 ## Evidence from peer products
 
 - [BIX42](https://www.bix42.com/home/) focuses cable/ISP work around subscriber billing and collection.
-- [Vyapar](https://vyapar.com/invoicing-software) emphasizes clear paid, pending, and partial states plus shareable reminders.
+- [Vyapar](https://vyaparapp.in/free/invoice-receipt-software) emphasizes payment tracking, shareable receipts, reminders, automatic numbering, and reusable branded document templates.
 - [Splynx billing](https://splynx.com/isp-billing/) and its [customer billing view](https://wiki.splynx.com/customer_management/customer_billing) combine customer finance history, recurring billing, reminders, and document generation.
 - [ISPBox billing](https://ispbox.net/feature/telecom-billing-software) and its [client billing tab](https://ispbox.net/wiki/client-billing-tab) surface balance, upcoming invoices, pending charges, invoices, and payments in one customer context.
 - [Powercode](https://www.powercode.com/command/) highlights recurring billing, proration, payment plans, and customer lifecycle automation; only the simple preview and lifecycle cues fit this product.

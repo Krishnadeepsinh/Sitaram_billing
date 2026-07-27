@@ -27,6 +27,13 @@ const updateCustomerSchema = z.object({
   installationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), status: z.enum(['active', 'inactive']), restartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), statusReason: z.string().trim().max(250).optional(),
 })
 const restoreCustomerSchema = z.object({ id: z.number().int().positive(), serviceType: serviceTypeSchema, reason: z.string().trim().max(250).optional() })
+const bulkArchiveCustomersSchema = z.object({
+  action: z.literal('archive_many'),
+  serviceType: serviceTypeSchema,
+  ids: z.array(z.number().int().positive()).min(1).max(100)
+    .refine((ids) => new Set(ids).size === ids.length, 'Subscriber selection contains duplicate records.'),
+  reason: z.string().trim().max(250).optional(),
+})
 class CustomerRequestError extends Error { constructor(public status: number, message: string) { super(message) } }
 
 function customerValidationMessage(error: z.ZodError) {
@@ -48,16 +55,46 @@ function customerValidationMessage(error: z.ZodError) {
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   if (!await requireSession(request, response)) return
   try {
+    if (request.method === 'POST' && request.body?.action === 'archive_many') {
+      const input = body(bulkArchiveCustomersSchema, request.body)
+      const reason = input.reason && input.reason.length >= 5 ? input.reason : 'Bulk archived by administrator'
+      const placeholders = input.ids.map(() => '?').join(',')
+      await withWriteTransaction(async (transaction) => {
+        const customers = await transaction.execute({
+          sql: `SELECT id FROM customers WHERE service_type = ? AND is_deleted = 0 AND id IN (${placeholders})`,
+          args: [input.serviceType, ...input.ids],
+        })
+        if (customers.rows.length !== input.ids.length) throw new CustomerRequestError(409, 'One or more selected subscribers are no longer available. Refresh the directory and try again.')
+        await transaction.execute({
+          sql: `UPDATE customers SET is_deleted = 1 WHERE service_type = ? AND is_deleted = 0 AND id IN (${placeholders})`,
+          args: [input.serviceType, ...input.ids],
+        })
+        for (const id of input.ids) {
+          await recordAudit(transaction, { entityType: 'customer', entityId: id, action: 'customer_archived', reason, details: { bulkCount: input.ids.length } })
+        }
+      })
+      return response.status(200).json({ archived: input.ids.length })
+    }
     if (request.method === 'GET') {
       const serviceType = serviceTypeSchema.parse(request.query.serviceType)
       const includeDeleted = request.query.includeDeleted === '1'
       const query = typeof request.query.query === 'string' ? `%${request.query.query.trim()}%` : '%'
+      const limitValue = Number(request.query.limit ?? 100)
+      const offsetValue = Number(request.query.offset ?? 0)
+      const limit = Number.isFinite(limitValue) ? Math.min(Math.max(Math.trunc(limitValue), 1), 500) : 100
+      const offset = Number.isFinite(offsetValue) ? Math.max(Math.trunc(offsetValue), 0) : 0
+      const status = typeof request.query.status === 'string' && ['active', 'inactive'].includes(request.query.status) ? request.query.status : ''
+      const areaId = typeof request.query.areaId === 'string' && /^\d+$/.test(request.query.areaId) ? Number(request.query.areaId) : undefined
+      const planId = typeof request.query.planId === 'string' && (request.query.planId === 'none' || /^\d+$/.test(request.query.planId)) ? request.query.planId : undefined
+      const dueOnly = request.query.dueOnly === '1'
       const unbilledOpeningDue = `CASE WHEN customers.opening_balance_type = 'due'
         AND NOT EXISTS (SELECT 1 FROM invoices opening_invoice JOIN invoice_charges opening_charge ON opening_charge.invoice_id = opening_invoice.id
           WHERE opening_invoice.customer_id = customers.id AND opening_invoice.is_deleted = 0 AND opening_invoice.is_merged = 0 AND opening_charge.charge_type = 'opening_due')
         THEN customers.opening_balance_paise ELSE 0 END`
+      const filterSql = [status ? 'AND customers.status = ?' : '', areaId !== undefined ? 'AND customers.area_id = ?' : '', planId === 'none' ? 'AND customers.plan_id IS NULL' : planId ? 'AND customers.plan_id = ?' : '', dueOnly ? `AND (COALESCE(debt.amountDuePaise, 0) + ${unbilledOpeningDue}) > 0` : ''].join(' ')
+      const filterArgs = [status, areaId, planId && planId !== 'none' ? Number(planId) : undefined].filter((value) => value !== '' && value !== undefined)
       const result = await database().execute({
-        sql: `SELECT customers.id, customers.sort_order AS sortOrder, customers.customer_code AS customerCode, customers.name, customers.phone,
+        sql: `SELECT COUNT(*) OVER() AS totalCount, customers.id, customers.sort_order AS sortOrder, customers.customer_code AS customerCode, customers.name, customers.phone,
           customers.stb_number AS stbNumber, customers.status, customers.next_billing_start_date AS nextBillingStartDate,
           customers.installation_date AS installationDate, customers.area_id AS areaId, customers.plan_id AS planId,
           customers.credit_balance_paise AS creditBalancePaise, areas.display_name AS areaName, plans.name AS planName, plans.price_paise AS planPricePaise, COALESCE(plans.is_active, 0) AS planIsActive,
@@ -114,10 +151,13 @@ export default async function handler(request: VercelRequest, response: VercelRe
           ) coverage ON coverage.customer_id = customers.id
           WHERE customers.service_type = ? AND customers.is_deleted = ${includeDeleted ? '1' : '0'}
           AND (customers.name LIKE ? OR customers.customer_code LIKE ? OR COALESCE(customers.stb_number, '') LIKE ? OR COALESCE(customers.phone, '') LIKE ? OR areas.display_name LIKE ?)
-          ORDER BY customers.sort_order`,
-        args: [todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), serviceType, query, query, query, query, query],
+          ${filterSql}
+          ORDER BY customers.sort_order
+          LIMIT ? OFFSET ?`,
+        args: [todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), serviceType, query, query, query, query, query, ...filterArgs, limit, offset],
       })
-      return response.status(200).json(result.rows)
+      const total = Number(result.rows[0]?.totalCount ?? 0)
+      return response.status(200).json({ items: result.rows.map(({ totalCount: _totalCount, ...row }) => row), total, limit, offset })
     }
     if (request.method === 'PUT') {
       const input = body(updateCustomerSchema, request.body)
