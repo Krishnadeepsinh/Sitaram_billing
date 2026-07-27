@@ -11,8 +11,42 @@ export function formatRupees(paise: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(paise / 100)
 }
 
+function moneyPreviewPaise(value: string): number {
+  const normalized = value.trim()
+  return /^\d+(?:\.\d{0,2})?$/.test(normalized)
+    ? Math.round(Number(normalized) * 100)
+    : 0
+}
+
+export function paymentEntryBreakdown(
+  duePaise: number,
+  amountValue: string,
+  discountValue: string,
+) {
+  const safeDuePaise = Math.max(0, duePaise)
+  const amountReceivedPaise = moneyPreviewPaise(amountValue)
+  const discountGivenPaise = moneyPreviewPaise(discountValue)
+  const maxDiscountPaise = Math.max(0, safeDuePaise - amountReceivedPaise)
+  const appliedDiscountPaise = Math.min(discountGivenPaise, maxDiscountPaise)
+
+  return {
+    amountReceivedPaise,
+    discountGivenPaise,
+    maxDiscountPaise,
+    discountExcessPaise: Math.max(0, discountGivenPaise - maxDiscountPaise),
+    coveredPaise: Math.min(
+      safeDuePaise,
+      amountReceivedPaise + appliedDiscountPaise,
+    ),
+    remainingDuePaise: Math.max(
+      0,
+      safeDuePaise - amountReceivedPaise - appliedDiscountPaise,
+    ),
+    advanceCreditPaise: Math.max(0, amountReceivedPaise - safeDuePaise),
+  }
+}
+
 export function paymentAmountAfterDiscount(duePaise: number, discountValue: string): string {
-  const normalized = discountValue.trim()
-  const discountPaise = /^\d+(?:\.\d{0,2})?$/.test(normalized) ? Math.round(Number(normalized) * 100) : 0
+  const discountPaise = moneyPreviewPaise(discountValue)
   return (Math.max(0, duePaise - discountPaise) / 100).toFixed(2)
 }

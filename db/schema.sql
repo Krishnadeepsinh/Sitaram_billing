@@ -190,6 +190,7 @@ CREATE TABLE IF NOT EXISTS payments (
   amount_received_paise INTEGER NOT NULL CHECK (amount_received_paise >= 0),
   discount_given_paise INTEGER NOT NULL DEFAULT 0 CHECK (discount_given_paise >= 0),
   payment_mode TEXT NOT NULL CHECK (payment_mode IN ('cash', 'upi', 'system_credit')),
+  payment_reference TEXT,
   notes TEXT,
   request_key TEXT,
   resulting_status TEXT NOT NULL CHECK (resulting_status IN ('settled', 'partial', 'credit_added')),
@@ -201,6 +202,10 @@ CREATE TABLE IF NOT EXISTS payments (
 
 CREATE UNIQUE INDEX IF NOT EXISTS payments_request_key_unique
   ON payments(service_type, request_key) WHERE request_key IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS payments_reference_unique
+  ON payments(lower(trim(payment_reference)))
+  WHERE is_deleted = 0 AND payment_reference IS NOT NULL AND trim(payment_reference) <> '';
 
 CREATE INDEX IF NOT EXISTS payments_customer_created_index ON payments(customer_id, created_at);
 

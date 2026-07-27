@@ -21,6 +21,7 @@
     "validate:backup": "node scripts/validate-backup.mjs",
     "audit:data": "node scripts/audit-data.mjs",
     "audit:live": "node scripts/deep-live-audit.mjs",
+    "render:documents": "node scripts/render-document-samples.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -2,10 +2,10 @@ import 'regenerator-runtime/runtime.js'
 import fontkit, { type Font } from '@pdf-lib/fontkit'
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import QRCode from 'qrcode'
-import { toWords } from 'number-to-words'
+import numberToWords from 'number-to-words'
 import gujaratiFontUrl from '../assets/NotoSansGujarati-Regular.ttf?url'
-import type { BusinessSettings, InvoiceDetail, PaymentDetail, Report } from './api'
-import { billingCyclePosition, formatBusinessDate } from './date'
+import type { BusinessSettings, Customer, Invoice, InvoiceDetail, Payment, PaymentDetail, Report } from './api'
+import { formatBusinessDate } from './date'
 
 type Row = { label: string; value: string }
 type EmbeddedFont = Awaited<ReturnType<PDFDocument['embedFont']>>
@@ -165,89 +165,259 @@ async function shareOrDownload(fileName: string, title: string, bytes: Uint8Arra
   window.open(`https://wa.me/?text=${encodeURIComponent(`${title} downloaded. Please attach ${fileName}.`)}`, '_blank', 'noopener,noreferrer')
 }
 
-function invoiceRows(invoice: InvoiceDetail): Row[] {
-  return [
-    { label: 'Billing date', value: formatBusinessDate(invoice.issuedDate) }, { label: 'Due date', value: formatBusinessDate(invoice.dueDate) },
-    { label: 'Customer', value: invoice.customerName }, { label: 'Customer / STB ID', value: `${invoice.customerCode}${invoice.stbNumber ? ` / ${invoice.stbNumber}` : ''}` },
-    { label: 'Area', value: invoice.areaName }, { label: 'Plan', value: invoice.planName }, { label: 'Service period', value: `${formatBusinessDate(invoice.periodStart)} to ${formatBusinessDate(invoice.periodEnd)}` },
-    { label: 'Billing cycle position', value: billingCyclePosition(invoice.periodStart, invoice.periodEnd) },
-    ...invoice.mergeItems.map((item) => ({ label: `Merged ${item.invoiceCode}`, value: `${item.planName} | ${formatBusinessDate(item.periodStart)} to ${formatBusinessDate(item.periodEnd)} | ${pdfMoney(item.amountPaise)}` })),
-    { label: 'Previous due at issue', value: pdfMoney(invoice.previousDueSnapshotPaise) }, { label: 'Current period amount', value: pdfMoney(invoice.currentPeriodAmountPaise) },
-    { label: 'Total payable at issue', value: pdfMoney(invoice.totalPayablePaise) }, { label: 'Live invoice balance', value: pdfMoney(invoice.liveBalancePaise) },
-    ...invoice.allocations.map((item) => ({ label: `Payment ${item.paymentCode}`, value: `${formatBusinessDate(item.paymentDate)} | Cash ${pdfMoney(item.cashPaise)} | Discount ${pdfMoney(item.discountPaise)} | Credit ${pdfMoney(item.creditPaise)}` })),
-    { label: 'Status', value: invoice.status.toUpperCase() },
-  ]
-}
-
-function receiptRows(payment: PaymentDetail): Row[] {
-  return [
-    { label: 'Payment date', value: formatBusinessDate(payment.paymentDate) }, { label: 'Customer', value: payment.customerName }, { label: 'Customer / STB ID', value: `${payment.customerCode}${payment.stbNumber ? ` / ${payment.stbNumber}` : ''}` },
-    { label: 'Area', value: payment.areaName }, { label: 'Payment mode', value: payment.paymentMode.replace('_', ' ').toUpperCase() }, { label: 'Amount received', value: pdfMoney(payment.amountReceivedPaise) },
-    { label: 'Discount given', value: pdfMoney(payment.discountGivenPaise) }, { label: 'Notes', value: payment.notes || '—' },
-    ...payment.allocations.map((item) => ({ label: `Allocated to ${item.invoiceCode} · ${item.chargeType === 'opening_due' ? 'Previous due' : 'Service charge'}`, value: `${formatBusinessDate(item.periodStart)} to ${formatBusinessDate(item.periodEnd)} | Cash ${pdfMoney(item.cashPaise)} | Discount ${pdfMoney(item.discountPaise)} | Credit ${pdfMoney(item.creditPaise)}` })),
-    { label: 'Final status', value: payment.resultingStatus.replace('_', ' ').toUpperCase() },
-  ]
-}
-
-void invoiceRows
-void receiptRows
 type StatementVariant = 'invoice' | 'receipt'
 type StatementFonts = { regular: EmbeddedFont; bold: EmbeddedFont; gujarati: Font }
 const statementDate = (value?: string) => { if (!value) return '—'; const [year, month, day] = value.split('-'); return `${day}/${month}/${year}` }
-const wordsForMoney = (paise: number) => { const rupees = Math.floor(Math.abs(paise) / 100); const cents = Math.abs(paise) % 100; const phrase = `${toWords(rupees)}${cents ? ` rupees and ${toWords(cents)} paise` : ' rupees'} only`; return phrase.charAt(0).toUpperCase() + phrase.slice(1) }
-const rupee = (paise: number) => paise > 0 ? `Rs. ${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''
+const wordsForMoney = (paise: number) => { const rupees = Math.floor(Math.abs(paise) / 100); const cents = Math.abs(paise) % 100; const phrase = `${numberToWords.toWords(rupees)}${cents ? ` rupees and ${numberToWords.toWords(cents)} paise` : ' rupees'} only`; return phrase.charAt(0).toUpperCase() + phrase.slice(1) }
+const rupee = (paise: number) => `Rs. ${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 function decodeDataUrl(value: string) { const encoded = value.split(',')[1] ?? ''; const binary = atob(encoded); return Uint8Array.from(binary, (character) => character.charCodeAt(0)) }
+
+export function invoicePaymentUri(invoice: Pick<InvoiceDetail, 'invoiceCode' | 'liveBalancePaise'>, settings: Pick<BusinessSettings, 'businessName' | 'upiId'>) {
+  const balanceDue = Math.max(0, Number(invoice.liveBalancePaise || 0))
+  if (!settings.upiId || balanceDue <= 0) return null
+  const params = new URLSearchParams({
+    pa: settings.upiId,
+    pn: settings.businessName || 'Sitaram Cable',
+    am: (balanceDue / 100).toFixed(2),
+    cu: 'INR',
+    tn: `Invoice ${invoice.invoiceCode}`,
+    tr: invoice.invoiceCode,
+  })
+  return `upi://pay?${params}`
+}
+
+export function invoiceDisplayBreakdown(invoice: Pick<InvoiceDetail, 'currentPeriodAmountPaise' | 'previousDueSnapshotPaise' | 'totalPayablePaise' | 'liveBalancePaise' | 'allocations'>) {
+  return {
+    monthlyServicePaise: Number(invoice.currentPeriodAmountPaise || 0),
+    oldUnpaidPaise: Number(invoice.previousDueSnapshotPaise || 0),
+    totalBillPaise: Number(invoice.totalPayablePaise || 0),
+    paymentReceivedPaise: invoice.allocations.reduce((total, item) => total + Number(item.cashPaise || 0), 0),
+    discountGivenPaise: invoice.allocations.reduce((total, item) => total + Number(item.discountPaise || 0), 0),
+    customerCreditUsedPaise: invoice.allocations.reduce((total, item) => total + Number(item.creditPaise || 0), 0),
+    amountLeftPaise: Math.max(0, Number(invoice.liveBalancePaise || 0)),
+  }
+}
+
+export function paymentDisplayBreakdown(payment: Pick<PaymentDetail, 'amountReceivedPaise' | 'discountGivenPaise' | 'settledAmountPaise' | 'liveBalancePaise' | 'allocations'>) {
+  return {
+    paymentReceivedPaise: Number(payment.amountReceivedPaise || 0),
+    discountGivenPaise: Number(payment.discountGivenPaise || 0),
+    customerCreditUsedPaise: payment.allocations.reduce((total, item) => total + Number(item.creditPaise || 0), 0),
+    totalBillCoveredPaise: Number(payment.settledAmountPaise || 0),
+    amountStillUnpaidPaise: Math.max(0, Number(payment.liveBalancePaise || 0)),
+  }
+}
+
+function invoiceStatusLabel(status: string, amountLeftPaise: number) {
+  if (amountLeftPaise <= 0) return 'PAID'
+  if (status === 'partial') return 'PARTLY PAID'
+  if (status === 'overdue') return 'PAYMENT OVERDUE'
+  return 'PAYMENT DUE'
+}
 
 type StatementData = Record<string, any>
 async function createStatementPdf(variant: StatementVariant, data: StatementData, settings: BusinessSettings) {
   const pdf = await PDFDocument.create(); const gujaratiBytes = await fetch(gujaratiFontUrl).then((response) => response.arrayBuffer())
   const fonts: StatementFonts = { regular: await pdf.embedFont(StandardFonts.Helvetica), bold: await pdf.embedFont(StandardFonts.HelveticaBold), gujarati: fontkit.create(new Uint8Array(gujaratiBytes)) }
-  const accent = variant === 'invoice' ? rgb(.95, .25, .1) : rgb(.05, .63, .28); const navy = rgb(.1, .18, .36); const pale = variant === 'invoice' ? rgb(.99, .95, .9) : rgb(.91, .98, .93); const line = rgb(.87, .9, .94); const logo = await embedLogo(pdf, settings.logoUrl || '/logo.png')
+  const navy = rgb(.03, .16, .38); const orange = rgb(.96, .3, .06); const green = rgb(.03, .47, .2); const red = rgb(.72, .12, .1)
+  const ink = rgb(.08, .12, .19); const muted = rgb(.38, .43, .51); const line = rgb(.82, .85, .89); const soft = rgb(.97, .98, .99)
+  const accent = variant === 'invoice' ? orange : green; const logo = await embedLogo(pdf, settings.logoUrl || '/logo.png')
   const serviceLabel = data.serviceType === 'broadband' ? 'Broadband Subscription' : 'Digital Cable TV'
   const generatedAt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }).format(new Date())
-  const useLegacyReceiptLayout = Boolean((globalThis as { __legacyReceiptLayout?: boolean }).__legacyReceiptLayout)
-  const page = pdf.addPage([595, 842]); const draw = (value: string, x: number, y: number, size = 10, bold = false, color = navy) => drawMixedText(page, value, value === 'AMOUNT RECEIVED' ? 238 : x, y, size, bold ? fonts.bold : fonts.regular, fonts.gujarati, color)
+  const page = pdf.addPage([595, 842]); const draw = (value: string, x: number, y: number, size = 10, bold = false, color = ink) => drawMixedText(page, value, x, y, size, bold ? fonts.bold : fonts.regular, fonts.gujarati, color)
   const textWidth = (value: string, size: number, bold = false) => mixedTextWidth(value, size, bold ? fonts.bold : fonts.regular, fonts.gujarati)
-  let lastRightY = Number.NaN; let sameRightY = 0
-  const right = (value: string, y: number, size = 10, bold = false, color = navy) => { sameRightY = y === lastRightY ? sameRightY + 1 : 0; lastRightY = y; const edge = y < 400 ? 555 : sameRightY < 3 ? [410, 485, 555][sameRightY] : 555; draw(value, edge - textWidth(value, size, bold), y, size, bold, color) }
-  page.drawRectangle({ x: 0, y: 748, width: 595, height: 94, color: navy })
-  if (logo) page.drawImage(logo, { x: 30, y: 775, width: 62, height: 62 })
-  draw('SITARAM CABLE & BROADBAND', 108, 812, 18, true, rgb(1, 1, 1)); draw('Connecting Every Home', 108, 795, 10, false, rgb(.8, .87, .95))
-  draw(`Phone: ${settings.phoneNumbers || ''}   |   Address: ${settings.address || ''}`, 108, 778, 8.5, false, rgb(.82, .88, .95)); draw(`WhatsApp Support: ${settings.phoneNumbers || ''}   |   UPI: ${settings.upiId || '-'}`, 108, 762, 8.5, false, rgb(.82, .88, .95))
-  page.drawRectangle({ x: 457, y: variant === 'invoice' ? 794 : 787, width: 108, height: variant === 'invoice' ? 28 : 42, color: accent, borderRadius: 5 })
-  draw(variant === 'invoice' ? 'INVOICE' : 'OFFICIAL', 470, variant === 'invoice' ? 803 : 812, 9, true, rgb(1, 1, 1)); if (variant === 'receipt') draw('PAYMENT RECEIPT', 470, 798, 8.5, true, rgb(1, 1, 1))
-  page.drawRectangle({ x: 0, y: 744, width: 595, height: 4, color: accent })
-  const info = variant === 'invoice' ? [['INVOICE NO', data.invoiceCode], ['BILLING DATE', statementDate(data.issuedDate)], ['DUE DATE', statementDate(data.dueDate)], ['STATUS', data.status.toUpperCase()]] : [['RECEIPT NO', data.paymentCode], ['PAYMENT DATE', statementDate(data.paymentDate)], ['PAYMENT MODE', data.paymentMode.toUpperCase()], ['STATUS', 'SUCCESSFUL']]
-  page.drawRectangle({ x: 0, y: 690, width: 595, height: 54, color: variant === 'invoice' ? rgb(.97, .98, 1) : rgb(.93, 1, .95) })
-  info.forEach(([label, value], index) => { const x = index * 148.75; if (index) page.drawLine({ start: { x, y: 690 }, end: { x, y: 744 }, thickness: .5, color: line }); draw(label, x + 15, 724, 7.5, true, variant === 'invoice' ? rgb(.35, .42, .55) : rgb(.05, .48, .22)); draw(value, x + 15, 704, 10, true, navy) })
-  let y = 656
-  if (variant === 'receipt') { page.drawRectangle({ x: 0, y: 560, width: 595, height: 96, color: rgb(.12, .52, .18) }); draw('AMOUNT RECEIVED', 0, 630, 10, true, rgb(1, 1, 1)); right(rupee(data.amountReceivedPaise), 590, 30, true, rgb(1, 1, 1)); right(`${wordsForMoney(data.amountReceivedPaise)}`, 570, 9, false, rgb(1, 1, 1)); const discountPaise = Number(data.discountGivenPaise || 0); const settledPaise = Number(data.settledAmountPaise || data.amountReceivedPaise + discountPaise); const summary = discountPaise > 0 ? `Received ${rupee(Number(data.amountReceivedPaise))}  +  Discount ${rupee(discountPaise)}  =  Settled ${rupee(settledPaise)}` : `Received ${rupee(Number(data.amountReceivedPaise))}  =  Settled ${rupee(settledPaise)}`; draw(summary, 130, 548, 8.5, true, rgb(.05, .48, .22)); y = 538 }
-  const drawCard = (x: number, width: number, title: string, fields: Array<[string, string]>) => { const height = 28 + fields.length * 22; const bottom = y - height; page.drawRectangle({ x, y: bottom, width, height, color: rgb(.98, .99, 1), borderColor: line, borderWidth: .7 }); page.drawRectangle({ x, y: y - 28, width, height: 28, color: navy }); draw(title, x + 12, y - 18, 8.5, true, rgb(1, 1, 1)); fields.forEach(([label, value], index) => { const rowY = y - 50 - index * 22; draw(`${label}:`, x + 12, rowY, 8.5, false, rgb(.4, .48, .6)); draw(value, x + 104, rowY, 9, true, navy) }) }
-  const card = drawCard
-  if (variant === 'invoice') {
-    const invoice = data as InvoiceDetail; const customerFields: Array<[string, string]> = [['Full Name', invoice.customerName], ...(invoice.stbNumber ? [['STB', invoice.stbNumber] as [string, string]] : []), ...(invoice.phone ? [['Mobile No', invoice.phone] as [string, string]] : []), ['Service Type', serviceLabel]]
-    drawCard(30, 270, 'CUSTOMER INFORMATION', customerFields); drawCard(315, 250, 'INSTALLATION ADDRESS', [['Area', invoice.areaName]])
-    y -= 148; draw('LINE ITEMS', 30, y, 9, true, accent); y -= 18; page.drawRectangle({ x: 30, y: y - 28, width: 535, height: 28, color: navy }); ['#', 'Plan Name', 'Service Period', 'Rate (Rs.)', 'Arrears (Rs.)', 'Amount (Rs.)'].forEach((label, index) => draw(label, [40, 68, 190, 350, 425, 505][index], y - 18, 7.5, true, rgb(1, 1, 1))); y -= 42; page.drawRectangle({ x: 30, y: y - 34, width: 535, height: 34, color: rgb(.98, .99, 1) }); draw('1', 40, y - 20, 8.5); draw(`${invoice.planName} (${invoice.periodStart.slice(5, 7)}/${invoice.periodStart.slice(2, 4)})`, 68, y - 20, 8.5); draw(`${statementDate(invoice.periodStart)} to ${statementDate(invoice.periodEnd)}`, 190, y - 20, 8.5); right(rupee(invoice.currentPeriodAmountPaise), y - 20, 8.5); right(rupee(invoice.previousDueSnapshotPaise), y - 20, 8.5); right(rupee(invoice.totalPayablePaise), y - 20, 8.5); y -= 60
-    const totalX = 320; page.drawRectangle({ x: totalX, y: y - 88, width: 245, height: 88, borderColor: line, borderWidth: .7, borderRadius: 4 }); draw('Plan Amount:', totalX + 12, y - 24, 9); right(rupee(invoice.currentPeriodAmountPaise), y - 24, 9); draw(invoice.previousDueSnapshotPaise > 0 ? 'Previous Dues (Arrears):' : '', totalX + 12, y - 48, 9); right(rupee(invoice.previousDueSnapshotPaise), y - 48, 9); page.drawRectangle({ x: totalX, y: y - 88, width: 245, height: 31, color: navy }); draw('GRAND TOTAL:', totalX + 12, y - 77, 11, true, rgb(1, 1, 1)); right(rupee(invoice.totalPayablePaise), y - 77, 11, true, rgb(1, 1, 1)); y -= 112
-    page.drawRectangle({ x: 30, y: y - 28, width: 535, height: 28, color: rgb(.94, .96, .99), borderColor: line, borderWidth: .6, borderRadius: 3 }); draw(`Amount in Words: ${wordsForMoney(invoice.totalPayablePaise)}`, 42, y - 17, 9, false, navy); y -= 60; draw('PAYMENT INSTRUCTIONS', 30, y, 9, true, accent); const instructions = [`Pay via UPI: ${settings.upiId || '—'}`, 'Accepted: GPay / PhonePe / Paytm', 'Office Payment: Cash also accepted at office', 'Confirmation: Share screenshot after payment', `Support: Call/WhatsApp: ${settings.phoneNumbers || '—'}`]; instructions.forEach((item, index) => draw(`${index + 1}.  ${item}`, 40, y - 22 - index * 18, 8.5, false, navy)); if (settings.upiId) { const qrData = await QRCode.toDataURL(`upi://pay?pa=${settings.upiId}&pn=${encodeURIComponent(settings.businessName || 'Sitaram Cable')}&cu=INR`, { margin: 1, width: 140 }); const qr = await pdf.embedPng(decodeDataUrl(qrData)); page.drawRectangle({ x: 410, y: y - 112, width: 135, height: 140, color: rgb(.97, .98, 1), borderColor: line, borderWidth: .8, borderRadius: 4 }); draw('SCAN & PAY', 447, y + 10, 8.5, true, navy); page.drawImage(qr, { x: 424, y: y - 93, width: 108, height: 108 }); draw(`UPI: ${settings.upiId}`, 424, y - 105, 7, false, navy) }
-  } else if (useLegacyReceiptLayout) {
-    const payment = data; const paymentFields: Array<[string, string]> = [['Method', payment.paymentMode.toUpperCase()], ...(payment.paymentMode === 'upi' && settings.upiId ? [['Paid To', settings.upiId] as [string, string]] : []), ['Towards', payment.customerName ? 'Cable TV Subscription' : 'Subscription'], ['Service Period', payment.allocations[0] ? `${statementDate(payment.allocations[0].periodStart)} to ${statementDate(payment.allocations[0].periodEnd)}` : '—'], ['Transaction', 'CONFIRMED']]; const customerFields: Array<[string, string]> = [['Full Name', payment.customerName], ...(payment.stbNumber ? [['STB', payment.stbNumber] as [string, string]] : []), ...(payment.phone ? [['Mobile No', payment.phone] as [string, string]] : []), ['Area', payment.areaName], ['Service Type', 'Digital Cable TV'], ['Transaction ID', payment.paymentCode]]; card(30, 270, 'PAYMENT DETAILS', paymentFields); card(315, 250, 'CUSTOMER DETAILS', customerFields); y -= 180; draw('PAYMENT ALLOCATION DETAILS', 30, y, 9, true, rgb(.05, .63, .28)); y -= 18; page.drawRectangle({ x: 30, y: y - 28, width: 535, height: 28, color: navy }); draw('Item', 42, y - 18, 8, true, rgb(1, 1, 1)); right('Amount', y - 18, 8, true, rgb(1, 1, 1)); y -= 42; for (const item of payment.allocations) { draw(`Plan Subscription — ${item.periodStart.slice(5, 7)}/${item.periodStart.slice(2, 4)} (${statementDate(item.periodStart)} - ${statementDate(item.periodEnd)})`, 42, y - 18, 8.5, false, navy); right(rupee(item.cashPaise + item.discountPaise + item.creditPaise), y - 18, 8.5, true, navy); y -= 32 } draw('Subtotal', 42, y - 18, 9); right(rupee(payment.settledAmountPaise), y - 18, 9); y -= 34; page.drawRectangle({ x: 30, y: y - 34, width: 535, height: 34, color: rgb(.94, .96, .99) }); draw('Net Paid Amount:', 42, y - 22, 10, true, navy); right(rupee(payment.amountReceivedPaise), y - 22, 10, true, navy); y -= 52; page.drawRectangle({ x: 30, y: y - 30, width: 535, height: 30, color: pale }); draw('Current Status:', 42, y - 20, 9, true, navy); right(payment.resultingStatus === 'settled' ? 'FULLY PAID & CLEARED' : payment.resultingStatus.toUpperCase(), y - 20, 9, true, rgb(.05, .48, .22)); page.drawCircle({ x: 297, y: y - 88, size: 45, borderColor: rgb(.05, .5, .18), borderWidth: 2 }); draw('✓', 280, y - 82, 28, true, rgb(.05, .5, .18)); draw('VERIFIED', 265, y - 105, 10, true, rgb(.05, .5, .18)); draw('PAYMENT', 270, y - 120, 8, true, rgb(.05, .5, .18)); draw('CONFIRMED', 267, y - 134, 7, false, rgb(.05, .5, .18)) }
-  else {
-    const payment = data as PaymentDetail
-    const discountPaise = Number(payment.discountGivenPaise || 0)
-    const paymentFields: Array<[string, string]> = [['Payment mode', payment.paymentMode.toUpperCase()], ['Amount received', rupee(Number(payment.amountReceivedPaise))], ...(discountPaise > 0 ? [['Discount given', rupee(discountPaise)] as [string, string]] : []), ['Settled amount', rupee(Number(payment.settledAmountPaise || payment.amountReceivedPaise + discountPaise))], ['Transaction', 'CONFIRMED']]
-    const customerFields: Array<[string, string]> = [['Full Name', payment.customerName], ...(payment.customerCode ? [['Customer ID', payment.customerCode] as [string, string]] : []), ...(payment.stbNumber ? [['STB', payment.stbNumber] as [string, string]] : []), ...(payment.phone ? [['Mobile No', payment.phone] as [string, string]] : []), ['Area', payment.areaName], ['Service Type', serviceLabel], ['Transaction ID', payment.paymentCode]]
-    drawCard(30, 270, 'PAYMENT DETAILS', paymentFields); drawCard(315, 250, 'CUSTOMER DETAILS', customerFields)
-    y -= 204; draw('PAYMENT ALLOCATION DETAILS', 30, y, 9, true, rgb(.05, .63, .28)); y -= 18
-    page.drawRectangle({ x: 30, y: y - 28, width: 535, height: 28, color: navy }); draw('Coverage', 42, y - 18, 8, true, rgb(1, 1, 1)); draw('Cash', 290, y - 18, 8, true, rgb(1, 1, 1)); draw('Discount', 365, y - 18, 8, true, rgb(1, 1, 1)); draw('Credit', 445, y - 18, 8, true, rgb(1, 1, 1)); right('Total', y - 18, 8, true, rgb(1, 1, 1)); y -= 42
-    const allocations = Array.isArray(payment.allocations) ? payment.allocations : []; const visibleAllocations = allocations.slice(0, 7)
-    for (const item of visibleAllocations) { const coverage = item.chargeType === 'opening_due' ? 'Previous due' : item.chargeType === 'plan' ? 'Current plan' : 'Service charge'; const period = `${statementDate(item.periodStart)} - ${statementDate(item.periodEnd)}`; const total = Number(item.cashPaise || 0) + Number(item.discountPaise || 0) + Number(item.creditPaise || 0); draw(`${coverage} (${period})`, 42, y - 18, 7.8, false, navy); draw(rupee(Number(item.cashPaise || 0)), 290, y - 18, 7.8, false, navy); draw(rupee(Number(item.discountPaise || 0)), 365, y - 18, 7.8, false, navy); draw(rupee(Number(item.creditPaise || 0)), 445, y - 18, 7.8, false, navy); right(rupee(total), y - 18, 7.8, true, navy); y -= 28 }
-    if (allocations.length > visibleAllocations.length) { draw(`+ ${allocations.length - visibleAllocations.length} additional allocation(s)`, 42, y - 18, 8, false, rgb(.4, .48, .6)); y -= 24 }
-    draw('Total settled', 42, y - 18, 9, true, navy); right(rupee(Number(payment.settledAmountPaise || payment.amountReceivedPaise + discountPaise)), y - 18, 9, true, navy); y -= 34
-    page.drawRectangle({ x: 30, y: y - 32, width: 535, height: 32, color: rgb(.94, .96, .99), borderColor: line, borderWidth: .5 }); draw('Balance remaining:', 42, y - 21, 10, true, navy); const remainingPaise = Math.max(0, Number((payment as PaymentDetail & { liveBalancePaise?: number }).liveBalancePaise || 0)); right(remainingPaise > 0 ? rupee(remainingPaise) : 'Rs. 0.00', y - 21, 10, true, navy); y -= 48
-    page.drawRectangle({ x: 30, y: y - 30, width: 535, height: 30, color: pale }); draw('Current Status:', 42, y - 20, 9, true, navy); right(payment.resultingStatus === 'settled' ? 'FULLY PAID & CLEARED' : payment.resultingStatus.toUpperCase(), y - 20, 9, true, rgb(.05, .48, .22)); page.drawCircle({ x: 297, y: y - 62, size: 32, borderColor: rgb(.05, .5, .18), borderWidth: 2 }); draw('V', 290, y - 55, 19, true, rgb(.05, .5, .18)); draw('PAYMENT VERIFIED', 247, y - 104, 8, true, rgb(.05, .5, .18))
+  const right = 565
+  if (logo) page.drawImage(logo, { x: 30, y: 762, width: 68, height: 68 })
+  const businessName = truncateText(settings.businessName || 'Sitaram Cable & Broadband', 300, 16.5, fonts.bold, fonts.gujarati).toUpperCase()
+  draw(businessName, 116, 810, 16.5, true, navy); draw('Connecting Every Home', 116, 791, 9, false, muted)
+  draw(truncateText(`Phone: ${settings.phoneNumbers || '-'}   |   Address: ${settings.address || '-'}`, 305, 7.8, fonts.regular, fonts.gujarati), 116, 773, 7.8, false, ink)
+  draw(truncateText(`WhatsApp: ${settings.phoneNumbers || '-'}   |   UPI: ${settings.upiId || '-'}`, 305, 7.8, fonts.regular, fonts.gujarati), 116, 757, 7.8, false, ink)
+  const documentTitle = variant === 'invoice' ? 'INVOICE' : 'PAYMENT RECEIPT'
+  draw(documentTitle, right - textWidth(documentTitle, variant === 'invoice' ? 18 : 14, true), 805, variant === 'invoice' ? 18 : 14, true, navy)
+  if (variant === 'receipt') {
+    const recorded = 'PAYMENT RECORDED'
+    draw(recorded, right - textWidth(recorded, 8, true), 783, 8, true, green)
   }
-  page.drawRectangle({ x: 0, y: 0, width: 595, height: 28, color: navy }); draw(variant === 'invoice' ? `Thank you for choosing Sitaram Cable & Broadband | ${settings.upiId || ''} | Support: ${settings.phoneNumbers || ''} | Generated: ${generatedAt}` : `Computer Generated Receipt - No Signature Required | Sitaram Cable & Broadband | ${settings.phoneNumbers || ''} | Generated: ${generatedAt}`, 30, 10, 7.5, false, rgb(.82, .88, .95))
+  page.drawRectangle({ x: 30, y: 739, width: 535, height: 2.5, color: navy })
+  page.drawRectangle({ x: 500, y: 739, width: 65, height: 2.5, color: accent })
+  const info = variant === 'invoice'
+    ? [['INVOICE NO', data.invoiceCode], ['BILLING DATE', statementDate(data.issuedDate)], ['DUE DATE', statementDate(data.dueDate)], ['STATUS', invoiceStatusLabel(data.status, Number(data.liveBalancePaise || 0))]]
+    : [['RECEIPT NO', data.paymentCode], ['PAYMENT DATE', statementDate(data.paymentDate)], ['PAYMENT METHOD', String(data.paymentMode || '-').toUpperCase()], ['AMOUNT PAID', rupee(Number(data.amountReceivedPaise || 0))]]
+  page.drawLine({ start: { x: 30, y: 681 }, end: { x: 565, y: 681 }, thickness: .65, color: line })
+  info.forEach(([label, value], index) => {
+    const width = 535 / 4; const x = 30 + index * width
+    if (index) page.drawLine({ start: { x, y: 690 }, end: { x, y: 728 }, thickness: .5, color: line })
+    draw(label, x + 10, 714, 7, true, muted)
+    draw(truncateText(String(value || '-'), width - 20, index === 3 && variant === 'receipt' ? 11 : 9.5, fonts.bold, fonts.gujarati), x + 10, 694, index === 3 && variant === 'receipt' ? 11 : 9.5, true, index === 3 && variant === 'receipt' ? green : navy)
+  })
+  let y = variant === 'receipt' ? 645 : 653
+  if (variant === 'receipt') draw(`Amount in words: ${wordsForMoney(Number(data.amountReceivedPaise || 0))}`, 30, 665, 7.5, false, muted)
+  const drawSection = (x: number, width: number, top: number, title: string, fields: Array<[string, string]>) => {
+    const prepared = fields.map(([label, value]) => ({ label, lines: wrapText(value || '-', width - 102, 8.5, fonts.bold, fonts.gujarati) }))
+    draw(title, x, top, 9, true, navy)
+    page.drawLine({ start: { x, y: top - 8 }, end: { x: x + width, y: top - 8 }, thickness: 1, color: navy })
+    let rowY = top - 27
+    prepared.forEach(({ label, lines }) => {
+      const rowHeight = Math.max(23, 10 + lines.length * 11)
+      draw(label, x, rowY, 7.8, false, muted)
+      lines.forEach((value, lineIndex) => draw(value, x + 96, rowY - lineIndex * 11, 8.5, true, ink))
+      page.drawLine({ start: { x, y: rowY - rowHeight + 8 }, end: { x: x + width, y: rowY - rowHeight + 8 }, thickness: .35, color: line })
+      rowY -= rowHeight
+    })
+    return top - rowY
+  }
+  if (variant === 'invoice') {
+    const invoice = data as InvoiceDetail
+    const breakdown = invoiceDisplayBreakdown(invoice)
+    const customerFields: Array<[string, string]> = [
+      ['Full Name', invoice.customerName],
+      ['Customer ID', invoice.customerCode],
+      ...(invoice.stbNumber ? [['STB', invoice.stbNumber] as [string, string]] : []),
+      ...(invoice.phone ? [['Mobile', invoice.phone] as [string, string]] : []),
+    ]
+    const serviceFields: Array<[string, string]> = [
+      ['Service', serviceLabel],
+      ['Plan', invoice.planName],
+      ['Area', invoice.areaName],
+      ['Period', `${statementDate(invoice.periodStart)} to ${statementDate(invoice.periodEnd)}`],
+    ]
+    const customerHeight = drawSection(30, 255, y, 'CUSTOMER', customerFields)
+    const serviceHeight = drawSection(310, 255, y, 'SERVICE DETAILS', serviceFields)
+    y -= Math.max(customerHeight, serviceHeight) + 18
+    draw('BILL SUMMARY', 30, y, 9.5, true, navy)
+    y -= 15
+    page.drawRectangle({ x: 30, y: y - 23, width: 535, height: 23, color: soft, borderColor: line, borderWidth: .5 })
+    draw('DESCRIPTION', 42, y - 15, 7.5, true, navy)
+    const amountHeading = 'AMOUNT (Rs.)'
+    draw(amountHeading, 553 - textWidth(amountHeading, 7.5, true), y - 15, 7.5, true, navy)
+    y -= 23
+    const billRows = [
+      { label: 'Monthly Service', value: breakdown.monthlyServicePaise, color: ink, bold: false },
+      { label: 'Old Unpaid Amount', value: breakdown.oldUnpaidPaise, color: ink, bold: false },
+      { label: 'Total Bill', value: breakdown.totalBillPaise, color: navy, bold: true },
+      { label: 'Payment Already Received', value: breakdown.paymentReceivedPaise, color: green, bold: true, subtract: true },
+      { label: 'Discount Given', value: breakdown.discountGivenPaise, color: breakdown.discountGivenPaise > 0 ? orange : muted, bold: breakdown.discountGivenPaise > 0, subtract: true },
+      ...(breakdown.customerCreditUsedPaise > 0 ? [{ label: 'Customer Credit Used', value: breakdown.customerCreditUsedPaise, color: navy, bold: false, subtract: true }] : []),
+    ]
+    billRows.forEach((row, index) => {
+      if (index === 2) page.drawRectangle({ x: 30, y: y - 26, width: 535, height: 26, color: rgb(.95, .97, 1) })
+      else if (index === 3) page.drawRectangle({ x: 30, y: y - 26, width: 535, height: 26, color: rgb(.94, .99, .96) })
+      page.drawRectangle({ x: 30, y: y - 26, width: 535, height: 26, borderColor: line, borderWidth: .4 })
+      draw(row.label, 42, y - 17, 8.5, row.bold, row.color)
+      const amount = `${row.subtract && row.value > 0 ? '- ' : ''}${rupee(row.value)}`
+      draw(amount, 553 - textWidth(amount, 9, true), y - 17, 9, true, row.color)
+      y -= 26
+    })
+    const dueColor = breakdown.amountLeftPaise > 0 ? navy : green
+    page.drawRectangle({ x: 30, y: y - 44, width: 535, height: 44, borderColor: dueColor, borderWidth: 1 })
+    page.drawRectangle({ x: 30, y: y - 44, width: 232, height: 44, color: dueColor })
+    draw(breakdown.amountLeftPaise > 0 ? 'AMOUNT LEFT TO PAY' : 'NOTHING LEFT TO PAY', 44, y - 27, 10.5, true, rgb(1, 1, 1))
+    const amountLeft = rupee(breakdown.amountLeftPaise)
+    draw(amountLeft, 548 - textWidth(amountLeft, 17, true), y - 30, 17, true, dueColor)
+    y -= 58
+    draw(`Total Bill in words: ${wordsForMoney(breakdown.totalBillPaise)}`, 30, y, 7.5, false, muted)
+    y -= 27
+
+    draw(breakdown.amountLeftPaise > 0 ? 'HOW TO PAY' : 'PAYMENT STATUS', 30, y, 9.5, true, orange)
+    const instructions = breakdown.amountLeftPaise > 0
+      ? [`Pay exactly ${rupee(breakdown.amountLeftPaise)}`, `UPI: ${settings.upiId || '-'}`, `Use reference: ${invoice.invoiceCode}`, 'Receipt is issued after the admin records payment.', `Help: Call or WhatsApp ${settings.phoneNumbers || '-'}`]
+      : ['This bill is fully paid.', `Invoice reference: ${invoice.invoiceCode}`, `Help: Call or WhatsApp ${settings.phoneNumbers || '-'}`]
+    instructions.forEach((item, index) => draw(`${index + 1}.  ${item}`, 40, y - 21 - index * 16, 7.8, false, ink))
+    const paymentUri = invoicePaymentUri(invoice, settings)
+    if (paymentUri) {
+      const qrData = await QRCode.toDataURL(paymentUri, { margin: 1, width: 140 })
+      const qr = await pdf.embedPng(decodeDataUrl(qrData))
+      page.drawRectangle({ x: 438, y: y - 122, width: 117, height: 132, borderColor: navy, borderWidth: .7 })
+      page.drawImage(qr, { x: 449, y: y - 94, width: 95, height: 95 })
+      const qrCaption = `${rupee(breakdown.amountLeftPaise)} - ${invoice.invoiceCode}`
+      draw(qrCaption, 496.5 - textWidth(qrCaption, 6.5, true) / 2, y - 111, 6.5, true, navy)
+    }
+  } else {
+    const payment = data as PaymentDetail
+    const breakdown = paymentDisplayBreakdown(payment)
+    const paymentFields: Array<[string, string]> = [
+      ['Payment Method', payment.paymentMode.toUpperCase()],
+      ...(payment.paymentReference ? [['UTR / Reference', payment.paymentReference] as [string, string]] : []),
+      ['Recorded By', 'Administrator'],
+      ...(payment.notes ? [['Note', payment.notes] as [string, string]] : []),
+    ]
+    const customerFields: Array<[string, string]> = [
+      ['Full Name', payment.customerName],
+      ...(payment.customerCode ? [['Customer ID', payment.customerCode] as [string, string]] : []),
+      ...(payment.stbNumber ? [['STB', payment.stbNumber] as [string, string]] : []),
+      ...(payment.phone ? [['Mobile', payment.phone] as [string, string]] : []),
+      ['Area', payment.areaName],
+    ]
+    const customerHeight = drawSection(30, 255, y, 'CUSTOMER', customerFields)
+    const paymentHeight = drawSection(310, 255, y, 'PAYMENT DETAILS', paymentFields)
+    y -= Math.max(customerHeight, paymentHeight) + 18
+
+    draw('WHERE THIS PAYMENT WAS USED', 30, y, 9.5, true, navy)
+    y -= 15
+    page.drawRectangle({ x: 30, y: y - 23, width: 535, height: 23, color: navy })
+    draw('BILL ITEM', 42, y - 15, 7.5, true, rgb(1, 1, 1))
+    const amountHeading = 'Amount Covered'
+    draw(amountHeading.toUpperCase(), 553 - textWidth(amountHeading.toUpperCase(), 7.5, true), y - 15, 7.5, true, rgb(1, 1, 1))
+    y -= 23
+
+    const allocations = Array.isArray(payment.allocations) ? payment.allocations : []
+    const visibleAllocations = allocations.slice(0, 3)
+    if (!visibleAllocations.length) {
+      page.drawRectangle({ x: 30, y: y - 28, width: 535, height: 28, color: soft, borderColor: line, borderWidth: .4 })
+      draw('Payment recorded to the customer account', 42, y - 18, 8.2, false, ink)
+      y -= 28
+    }
+    for (const item of visibleAllocations) {
+      const label = item.chargeType === 'opening_due' ? 'Old Unpaid Amount' : 'Monthly Service'
+      const period = `${item.invoiceCode} | ${statementDate(item.periodStart)} to ${statementDate(item.periodEnd)}`
+      const covered = Number(item.cashPaise || 0) + Number(item.discountPaise || 0) + Number(item.creditPaise || 0)
+      page.drawRectangle({ x: 30, y: y - 34, width: 535, height: 34, color: soft, borderColor: line, borderWidth: .4 })
+      draw(label, 42, y - 15, 8.3, true, ink)
+      draw(truncateText(period, 350, 6.8, fonts.regular, fonts.gujarati), 42, y - 27, 6.8, false, rgb(.4, .48, .6))
+      const coveredAmount = rupee(covered)
+      draw(coveredAmount, 553 - textWidth(coveredAmount, 8.5, true), y - 21, 8.5, true, ink)
+      y -= 34
+    }
+    if (allocations.length > visibleAllocations.length) {
+      const remaining = `${allocations.length - visibleAllocations.length} more bill item(s) are saved in the customer account.`
+      page.drawRectangle({ x: 30, y: y - 20, width: 535, height: 20, color: soft })
+      draw(remaining, 42, y - 14, 7.2, false, rgb(.4, .48, .6))
+      y -= 20
+    }
+
+    const receiptRows = [
+      { label: 'Payment Received', value: breakdown.paymentReceivedPaise, color: rgb(.04, .43, .18), bold: true },
+      { label: 'Discount Given', value: breakdown.discountGivenPaise, color: breakdown.discountGivenPaise > 0 ? rgb(.78, .36, .03) : rgb(.4, .48, .6), bold: breakdown.discountGivenPaise > 0 },
+      ...(breakdown.customerCreditUsedPaise > 0 ? [{ label: 'Customer Credit Used', value: breakdown.customerCreditUsedPaise, color: navy, bold: false }] : []),
+      { label: 'Total Bill Covered', value: breakdown.totalBillCoveredPaise, color: navy, bold: true },
+    ]
+    receiptRows.forEach((row, index) => {
+      if (index === 0) page.drawRectangle({ x: 30, y: y - 24, width: 535, height: 24, color: rgb(.94, .99, .96) })
+      else if (index === receiptRows.length - 1) page.drawRectangle({ x: 30, y: y - 24, width: 535, height: 24, color: rgb(.95, .97, 1) })
+      page.drawRectangle({ x: 30, y: y - 24, width: 535, height: 24, borderColor: line, borderWidth: .4 })
+      draw(row.label, 42, y - 17, 8.5, row.bold, row.color)
+      const amount = rupee(row.value)
+      draw(amount, 553 - textWidth(amount, 9, true), y - 17, 9, true, row.color)
+      y -= 24
+    })
+
+    const unpaidColor = breakdown.amountStillUnpaidPaise > 0 ? red : green
+    page.drawRectangle({ x: 30, y: y - 40, width: 535, height: 40, color: breakdown.amountStillUnpaidPaise > 0 ? rgb(1, .97, .97) : rgb(.95, .99, .96), borderColor: unpaidColor, borderWidth: .8 })
+    draw(breakdown.amountStillUnpaidPaise > 0 ? 'AMOUNT STILL UNPAID' : 'NOTHING LEFT UNPAID', 42, y - 25, 9.5, true, unpaidColor)
+    const unpaidAmount = rupee(breakdown.amountStillUnpaidPaise)
+    draw(unpaidAmount, 553 - textWidth(unpaidAmount, 14, true), y - 27, 14, true, unpaidColor)
+    y -= 53
+
+    page.drawLine({ start: { x: 30, y }, end: { x: 565, y }, thickness: .55, color: line })
+    draw('Customer Account Status', 30, y - 18, 8.2, true, ink)
+    const accountStatus = breakdown.amountStillUnpaidPaise > 0 ? 'PARTLY PAID' : 'FULLY PAID'
+    draw(accountStatus, 565 - textWidth(accountStatus, 8.5, true), y - 18, 8.5, true, breakdown.amountStillUnpaidPaise > 0 ? orange : green)
+  }
+  page.drawLine({ start: { x: 30, y: 35 }, end: { x: 565, y: 35 }, thickness: 1, color: navy })
+  const footer = variant === 'invoice'
+    ? `Thank you for choosing ${settings.businessName || 'Sitaram Billing'} | ${settings.upiId || ''} | Support: ${settings.phoneNumbers || ''} | Generated: ${generatedAt}`
+    : `Computer Generated Receipt - No Signature Required | ${settings.businessName || 'Sitaram Billing'} | ${settings.phoneNumbers || ''} | Generated: ${generatedAt}`
+  draw(truncateText(footer, 535, 6.8, fonts.regular, fonts.gujarati), 30, 20, 6.8, false, muted)
   return pdf.save({ useObjectStreams: false })
 }
 
@@ -257,11 +427,33 @@ export async function reportPdfBytes(report: Report, settings: BusinessSettings)
   const rows: Row[] = [{ label: 'Report period', value: `${formatBusinessDate(report.from)} to ${formatBusinessDate(report.to)}` }, { label: 'Scope', value: report.scope.toUpperCase() }, { label: 'Billed', value: pdfMoney(report.billedPaise) }, { label: 'Collected', value: pdfMoney(report.collectedPaise) }, { label: 'Discount given', value: pdfMoney(report.discountGivenPaise) }, { label: 'Expenses', value: pdfMoney(report.expensePaise) }, { label: 'Outstanding', value: pdfMoney(report.outstandingPaise) }, { label: report.netLabel, value: pdfMoney(report.netPaise) }, { label: 'Active subscribers', value: String(report.activeSubscribers) }, { label: 'Subscriber records needing setup', value: String(report.dataQualityCount) }, ...report.payments.map((payment) => ({ label: payment.paymentCode, value: `${formatBusinessDate(payment.paymentDate)} | ${payment.customerName} | Received ${pdfMoney(payment.amountReceivedPaise)} | Discount ${pdfMoney(payment.discountGivenPaise)} | ${payment.paymentMode}` })), ...report.expenses.map((expense) => ({ label: `Expense ${expense.category}`, value: `${formatBusinessDate(expense.expenseDate)} | ${expense.description} | ${pdfMoney(expense.amountPaise)}` }))]
   return createPdfBytes('BUSINESS REPORT', report.scope.toUpperCase(), rows, settings)
 }
-export function pdfPreviewUrl(bytes: Uint8Array) { return URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' })) }
+export async function statementPdfBytes(customer: Customer, invoices: Invoice[], payments: Payment[], settings: BusinessSettings) {
+  const balance = customer.amountDuePaise - customer.creditBalancePaise
+  const rows: Row[] = [
+    { label: 'Customer', value: `${customer.name} (${customer.customerCode})` },
+    { label: 'Phone', value: customer.phone || '—' },
+    { label: 'Area / STB', value: `${customer.areaName} / ${customer.stbNumber || '—'}` },
+    { label: 'Plan', value: customer.planName || '—' },
+    { label: 'Current balance', value: pdfMoney(Math.max(0, balance)) },
+    { label: 'Advance credit', value: pdfMoney(customer.creditBalancePaise) },
+    { label: 'Service coverage', value: customer.latestPeriodEnd ? (customer.latestPeriodStart ? `${formatBusinessDate(customer.latestPeriodStart)} to ${formatBusinessDate(customer.latestPeriodEnd)}` : `Through ${formatBusinessDate(customer.latestPeriodEnd)}`) : 'Not billed yet' },
+    { label: 'Next billing start', value: customer.nextBillingStartDate ? formatBusinessDate(customer.nextBillingStartDate) : 'Not configured' },
+    { label: 'Invoice history', value: invoices.length ? invoices.map((invoice) => `${invoice.invoiceCode}: ${formatBusinessDate(invoice.periodStart)} to ${formatBusinessDate(invoice.periodEnd)} | ${pdfMoney(invoice.totalPayablePaise)} | ${invoice.status}`).join('\n') : 'No invoices recorded' },
+    { label: 'Payment history', value: payments.length ? payments.map((payment) => `${payment.paymentCode}: ${formatBusinessDate(payment.paymentDate)} | ${pdfMoney(payment.amountReceivedPaise)} | ${payment.paymentMode.toUpperCase()}${payment.paymentReference ? ` | Ref ${payment.paymentReference}` : ''}`).join('\n') : 'No payments recorded' },
+  ]
+  return createPdfBytes('CUSTOMER STATEMENT', customer.customerCode, rows, settings)
+}
+export function pdfPreviewUrl(bytes: Uint8Array) {
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
+  return `data:application/pdf;base64,${btoa(binary)}`
+}
 export async function downloadInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { saveBytes(`${invoice.invoiceCode}.pdf`, await invoicePdfBytes(invoice, settings)) }
 export async function shareInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { await shareOrDownload(`${invoice.invoiceCode}.pdf`, `${settings.businessName} invoice ${invoice.invoiceCode}`, await invoicePdfBytes(invoice, settings)) }
 export async function downloadReceipt(payment: PaymentDetail, settings: BusinessSettings) { saveBytes(`${payment.paymentCode}.pdf`, await receiptPdfBytes(payment, settings)) }
 export async function shareReceipt(payment: PaymentDetail, settings: BusinessSettings) { await shareOrDownload(`${payment.paymentCode}.pdf`, `${settings.businessName} receipt ${payment.paymentCode}`, await receiptPdfBytes(payment, settings)) }
+export async function downloadStatement(customer: Customer, invoices: Invoice[], payments: Payment[], settings: BusinessSettings) { saveBytes(`${customer.customerCode}-statement.pdf`, await statementPdfBytes(customer, invoices, payments, settings)) }
+export async function shareStatement(customer: Customer, invoices: Invoice[], payments: Payment[], settings: BusinessSettings) { await shareOrDownload(`${customer.customerCode}-statement.pdf`, `${settings.businessName} statement ${customer.customerCode}`, await statementPdfBytes(customer, invoices, payments, settings)) }
 
 export async function downloadReportPdf(report: Report, settings: BusinessSettings) {
   saveBytes(`sitaram-report-${report.from}-${report.to}.pdf`, await reportPdfBytes(report, settings))

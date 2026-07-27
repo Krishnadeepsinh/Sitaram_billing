@@ -18,9 +18,9 @@ import {
 } from "lucide-react";
 import {
   formatRupees,
-  paymentAmountAfterDiscount,
   rupeesToPaise,
 } from "../lib/money";
+import { PaymentAmountFields } from "../components/PaymentAmountFields";
 import {
   billingCyclePosition,
   formatBusinessDate,
@@ -32,6 +32,7 @@ import {
   createCustomer,
   createPayment,
   createPlan,
+  archiveCustomers,
   deleteArea,
   deleteCustomer,
   permanentlyDeleteArchivedCustomer,
@@ -40,6 +41,7 @@ import {
   listAreas,
   listCustomers,
   listPlans,
+  getSettings,
   restoreCustomer,
   updateArea,
   updateCustomer,
@@ -58,6 +60,7 @@ import { downloadCsv } from "../lib/csv";
 import { customerDueLabel, duePlanPeriodLabel } from "../lib/billing";
 
 type Notice = { kind: "success" | "error"; message: string } | undefined;
+const documents = () => import("../lib/documents");
 
 function formatDuePeriod(customer: Customer) {
   if (!customer.oldestDuePeriodStart || !customer.latestDuePeriodEnd)
@@ -378,6 +381,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [archivedCustomers, setArchivedCustomers] = useState<Customer[]>([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | Customer["status"]>(
     "all",
@@ -385,6 +389,9 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
   const [areaFilter, setAreaFilter] = useState("all");
   const [planFilter, setPlanFilter] = useState("all");
   const [dueOnly, setDueOnly] = useState(false);
+  const [customerOffset, setCustomerOffset] = useState(0);
+  const [customerTotal, setCustomerTotal] = useState(0);
+  const customerPageSize = 100;
   const [editing, setEditing] = useState<Customer>();
   const [editingArea, setEditingArea] = useState<Area>();
   const [deletingArea, setDeletingArea] = useState<Area>();
@@ -407,6 +414,8 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
   );
   const [deleting, setDeleting] = useState<Customer>();
   const [archiveReason, setArchiveReason] = useState("");
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
+  const [bulkArchiveReason, setBulkArchiveReason] = useState("");
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [restoreReason, setRestoreReason] = useState("");
   const [permanentlyDeleting, setPermanentlyDeleting] = useState<Customer>();
@@ -418,55 +427,64 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<Set<number>>(
     () => new Set(),
   );
+  const refreshSequence = useRef(0);
   const refresh = useCallback(
-    (search: string) => {
+    (search: string, offset = 0) => {
+      const sequence = ++refreshSequence.current;
       setLoading(true);
       Promise.all([
         listAreas(serviceType),
         listPlans(serviceType),
-        listCustomers(serviceType, search),
-        listCustomers(serviceType, "", true),
+        listCustomers(serviceType, search, false, { status: statusFilter, areaId: areaFilter, planId: planFilter, dueOnly, limit: customerPageSize, offset }),
       ])
-        .then(([nextAreas, nextPlans, nextCustomers, nextArchived]) => {
+        .then(([nextAreas, nextPlans, nextCustomers]) => {
+          if (sequence !== refreshSequence.current) return;
           setAreas(nextAreas);
           setPlans(nextPlans);
-          setCustomers(nextCustomers);
-          setArchivedCustomers(nextArchived);
-          const availableIds = new Set(nextCustomers.map(({ id }) => id));
+          setCustomers(nextCustomers.items);
+          setCustomerTotal(nextCustomers.total);
+          const availableIds = new Set(nextCustomers.items.map(({ id }) => id));
           setSelectedCustomerIds(
             (selected) =>
               new Set([...selected].filter((id) => availableIds.has(id))),
           );
         })
-        .catch((error: Error) =>
-          setNotice({ kind: "error", message: error.message }),
-        )
-        .finally(() => setLoading(false));
+        .catch((error: Error) => {
+          if (sequence === refreshSequence.current) {
+            setNotice({ kind: "error", message: error.message });
+          }
+        })
+        .finally(() => {
+          if (sequence === refreshSequence.current) setLoading(false);
+        });
     },
-    [serviceType],
+    [areaFilter, customerPageSize, dueOnly, planFilter, serviceType, statusFilter],
   );
+  const loadArchived = useCallback(() => {
+    setArchivedLoading(true);
+    listCustomers(serviceType, "", true, { limit: 500 })
+      .then((result) => setArchivedCustomers(result.items))
+      .catch((error: Error) => setNotice({ kind: "error", message: error.message }))
+      .finally(() => setArchivedLoading(false));
+  }, [serviceType]);
+  const previousService = useRef<ServiceType | undefined>(undefined);
+  const queryRef = useRef(query);
+  queryRef.current = query;
   useEffect(() => {
-    setQuery("");
-    setEditing(undefined);
-    setFormOpen(false);
-    setSelectedCustomerIds(new Set());
-    refresh("");
-  }, [refresh]);
+    const serviceChanged = previousService.current !== serviceType;
+    previousService.current = serviceType;
+    if (serviceChanged) {
+      setQuery("");
+      setEditing(undefined);
+      setFormOpen(false);
+      setArchivedCustomers([]);
+      setSelectedCustomerIds(new Set());
+    }
+    setCustomerOffset(0);
+    refresh(serviceChanged ? "" : queryRef.current, 0);
+  }, [refresh, serviceType]);
 
-  const filteredCustomers = useMemo(
-    () =>
-      customers.filter(
-        (customer) =>
-          (statusFilter === "all" || customer.status === statusFilter) &&
-          (areaFilter === "all" || customer.areaId === Number(areaFilter)) &&
-          (planFilter === "all" ||
-            (planFilter === "none"
-              ? customer.planId === null
-              : customer.planId === Number(planFilter))) &&
-          (!dueOnly || netDue(customer) > 0),
-      ),
-    [areaFilter, customers, dueOnly, planFilter, statusFilter],
-  );
+  const filteredCustomers = useMemo(() => customers, [customers]);
   const allShownSelected =
     filteredCustomers.length > 0 &&
     filteredCustomers.every(({ id }) => selectedCustomerIds.has(id));
@@ -669,6 +687,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
         amountReceivedPaise: rupeesToPaise(String(data.get("amount"))),
         discountGivenPaise: rupeesToPaise(String(data.get("discount") || "0")),
         paymentMode: data.get("paymentMode") === "upi" ? "upi" : "cash",
+        paymentReference: String(data.get("paymentReference") || "").trim() || undefined,
         notes: String(data.get("notes") || "") || undefined,
         requestKey: paymentRequestKey,
       });
@@ -707,6 +726,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
     setSubmitting(true);
     try {
       await restoreCustomer(serviceType, customer.id, restoreReason);
+      setArchivedCustomers((current) => current.filter(({ id }) => id !== customer.id));
       setRestoreReason("");
       setNotice({ kind: "success", message: `${customer.name} restored.` });
       refresh(query);
@@ -727,6 +747,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
     setSubmitting(true);
     try {
       await permanentlyDeleteArchivedCustomer(serviceType, permanentlyDeleting.id, permanentDeleteReason);
+      setArchivedCustomers((current) => current.filter(({ id }) => id !== permanentlyDeleting.id));
       setNotice({ kind: "success", message: `${permanentlyDeleting.name} was permanently removed because it has no billing history.` });
       setPermanentlyDeleting(undefined);
       setPermanentDeleteReason("");
@@ -779,6 +800,48 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
       )
       .finally(() => setSummaryLoading(false));
   };
+  async function shareStatement() {
+    if (!summary || !summaryHistory) return;
+    setSubmitting(true);
+    try {
+      const settings = await getSettings();
+      if (!settings) throw new Error("Complete business settings before sharing a statement.");
+      await documents().then(({ shareStatement: share }) =>
+        share(summary, summaryHistory.invoices, summaryHistory.payments, settings),
+      );
+      setNotice({ kind: "success", message: `Statement prepared for ${summary.name}.` });
+    } catch (error) {
+      setNotice({ kind: "error", message: error instanceof Error ? error.message : "Unable to share statement." });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  async function archiveSelectedCustomers() {
+    const ids = [...selectedCustomerIds];
+    if (!ids.length) return;
+    setSubmitting(true);
+    try {
+      const result = await archiveCustomers(serviceType, ids, bulkArchiveReason);
+      setBulkArchiveOpen(false);
+      setBulkArchiveReason("");
+      setSelectedCustomerIds(new Set());
+      setNotice({
+        kind: "success",
+        message: `${result.archived} subscriber${result.archived === 1 ? "" : "s"} archived. Financial history was retained.`,
+      });
+      refresh(query, customerOffset);
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to archive the selected subscribers.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <section className="page-content">
@@ -786,15 +849,15 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
         title="Subscribers"
         subtitle="Manage subscriber status, 30-day coverage, billing, and collections."
         action={
-          <div className="page-actions">
+          <div className="page-actions subscriber-page-actions">
             <button className="secondary" onClick={exportSubscribers}>
               <Download size={16} />
               {selectedCustomerIds.size
                 ? `Export Selected (${selectedCustomerIds.size})`
                 : "Export"}
             </button>
-            <button className="secondary" onClick={() => setArchivedOpen(true)}>
-              <Archive size={16} /> Archived ({archivedCustomers.length})
+            <button className="secondary" onClick={() => { setArchivedOpen(true); loadArchived(); }}>
+              <Archive size={16} /> Archived{archivedCustomers.length ? ` (${archivedCustomers.length})` : ""}
             </button>
             <button className="primary" onClick={openAdd}>
               <Plus size={16} /> Add Subscriber
@@ -812,12 +875,12 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") refresh(query);
+              if (event.key === "Enter") { setCustomerOffset(0); refresh(query, 0); }
             }}
             placeholder="Search by name, ID, phone, STB, or area…"
             aria-label="Search subscribers"
           />
-          <button className="secondary" onClick={() => refresh(query)}>
+          <button className="secondary" onClick={() => { setCustomerOffset(0); refresh(query, 0); }}>
             Search
           </button>
         </div>
@@ -880,7 +943,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           <span>
             {selectedCustomerIds.size
               ? `${selectedCustomerIds.size} selected`
-              : `${filteredCustomers.length} shown`}
+              : `${customerTotal} shown`}
           </span>
         </div>
         {loading ? (
@@ -1110,13 +1173,56 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               </tbody>
             </table>
           </div>
-        ) : (
+      ) : (
           <Empty
             label="No subscribers found"
             text="Change the filters or add a subscriber."
           />
         )}
+        {!loading && customerTotal > customerPageSize ? (
+          <nav className="pagination" aria-label="Subscriber pages">
+            <span>
+              Showing {customerOffset + 1}–{Math.min(customerOffset + customerPageSize, customerTotal)} of {customerTotal}
+            </span>
+            <div className="pagination-actions">
+              <button className="secondary" disabled={customerOffset === 0} onClick={() => { const next = Math.max(0, customerOffset - customerPageSize); setCustomerOffset(next); refresh(query, next); }}>Previous</button>
+              <button className="secondary" disabled={customerOffset + customerPageSize >= customerTotal} onClick={() => { const next = customerOffset + customerPageSize; setCustomerOffset(next); refresh(query, next); }}>Next</button>
+            </div>
+          </nav>
+        ) : null}
       </article>
+
+      {selectedCustomerIds.size > 0 ? (
+        <aside className="subscriber-bulk-bar" aria-label="Selected subscriber actions">
+          <span className="subscriber-bulk-count" aria-hidden="true">
+            <Archive size={18} />
+          </span>
+          <span className="subscriber-bulk-summary">
+            <strong>{selectedCustomerIds.size} selected</strong>
+            <small>Actions apply to this page selection</small>
+          </span>
+          <span className="subscriber-bulk-actions">
+            <button className="bulk-bar-button" onClick={exportSubscribers}>
+              <Download size={15} /> Export
+            </button>
+            <button
+              className="bulk-bar-button bulk-bar-danger"
+              onClick={() => {
+                setBulkArchiveReason("");
+                setBulkArchiveOpen(true);
+              }}
+            >
+              <Archive size={15} /> Archive
+            </button>
+            <button
+              className="bulk-bar-clear"
+              onClick={() => setSelectedCustomerIds(new Set())}
+            >
+              Clear
+            </button>
+          </span>
+        </aside>
+      ) : null}
 
       {financialPopover ? (
         <div
@@ -1144,7 +1250,6 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               </span>
               <button
                 className="icon-button"
-                autoFocus
                 aria-label="Close financial summary"
                 onClick={() => setFinancialPopover(undefined)}
               >
@@ -1534,6 +1639,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                         </div>
                         <div className="ledger-details">
                           <span>Received {formatRupees(entry.payment.amountReceivedPaise)}</span>
+                          {entry.payment.paymentReference ? <span>Reference {entry.payment.paymentReference}</span> : null}
                           {entry.payment.discountGivenPaise > 0 ? <span>Discount {formatRupees(entry.payment.discountGivenPaise)}</span> : null}
                           {entry.payment.allocations?.map((allocation) => {
                             const amount = allocation.cashPaise + allocation.discountPaise + allocation.creditPaise
@@ -1550,6 +1656,13 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               )}
             </div>
             <div className="modal-actions">
+              <button
+                className="secondary"
+                disabled={submitting || summaryLoading || !summaryHistory}
+                onClick={() => void shareStatement()}
+              >
+                <FileText size={16} /> Share Statement
+              </button>
               <button
                 className="secondary"
                 onClick={() => {
@@ -1641,59 +1754,25 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 <option value="upi">UPI</option>
               </select>
             </label>
-            <label>
-              Amount Received (₹)
+            <PaymentAmountFields
+              key={quickPayment.id}
+              duePaise={Math.max(
+                0,
+                quickPayment.amountDuePaise - quickPayment.creditBalancePaise,
+              )}
+              holdAsCredit={quickPayment.unbilledOpeningDuePaise > 0}
+            />
+            <label className="full-field">
+              UTR / Payment Reference
               <input
-                name="amount"
+                name="paymentReference"
                 autoComplete="off"
-                inputMode="decimal"
-                pattern="\d+(\.\d{1,2})?"
-                defaultValue={
-                  Math.max(
-                    0,
-                    quickPayment.amountDuePaise -
-                      quickPayment.creditBalancePaise,
-                  )
-                    ? (
-                        Math.max(
-                          0,
-                          quickPayment.amountDuePaise -
-                            quickPayment.creditBalancePaise,
-                        ) / 100
-                      ).toFixed(2)
-                    : ""
-                }
-                required
-              />
-            </label>
-            <label>
-              Discount (₹)
-              <input
-                name="discount"
-                autoComplete="off"
-                inputMode="decimal"
-                pattern="\d+(\.\d{1,2})?"
-                defaultValue="0"
-                required
-                disabled={quickPayment.unbilledOpeningDuePaise > 0}
-                onChange={(event) => {
-                  const amount =
-                    event.currentTarget.form?.elements.namedItem("amount");
-                  if (amount instanceof HTMLInputElement)
-                    amount.value = paymentAmountAfterDiscount(
-                      Math.max(
-                        0,
-                        quickPayment.amountDuePaise -
-                          quickPayment.creditBalancePaise,
-                      ),
-                      event.currentTarget.value,
-                    );
-                }}
+                maxLength={120}
+                placeholder="Recommended for UPI or bank transfer"
               />
             </label>
             <p className="form-help full-field">
-              The discount reduces the amount received and settles invoice dues
-              only. It never creates advance credit.
+              The admin confirms the payment. A repeated UTR is blocked to prevent double entry.
             </p>
             <label className="full-field">
               Notes
@@ -1762,6 +1841,50 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           </div>
         </Modal>
       )}
+      {bulkArchiveOpen && selectedCustomerIds.size > 0 ? (
+        <Modal
+          title="Archive Selected Subscribers"
+          onClose={() => setBulkArchiveOpen(false)}
+        >
+          <div className="confirm-content bulk-archive-confirm">
+            <span className="confirm-icon">
+              <Archive size={20} aria-hidden="true" />
+            </span>
+            <div>
+              <h3>Archive {selectedCustomerIds.size} subscriber{selectedCustomerIds.size === 1 ? "" : "s"}?</h3>
+              <p>
+                Future billing stops for these subscribers. Their invoices,
+                receipts, balances, and audit history remain available and
+                every subscriber can be restored later.
+              </p>
+              <label>
+                Archive Note (optional)
+                <textarea
+                  value={bulkArchiveReason}
+                  onChange={(event) => setBulkArchiveReason(event.target.value)}
+                  maxLength={250}
+                  placeholder="Example: Old test subscriber records"
+                />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button
+                className="secondary"
+                onClick={() => setBulkArchiveOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary danger-button"
+                disabled={submitting}
+                onClick={() => void archiveSelectedCustomers()}
+              >
+                {submitting ? "Archiving…" : `Archive ${selectedCustomerIds.size}`}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
       {archivedOpen && (
         <Modal
           title="Archived Subscribers"
@@ -1785,7 +1908,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 placeholder="Add a note only if useful"
               />
             </label>
-            {archivedCustomers.length ? (
+            {archivedLoading ? <p className="empty-inline">Loading archived subscribers…</p> : archivedCustomers.length ? (
               archivedCustomers.map((customer) => (
                 <article className="archived-customer-card" key={customer.id}>
                   <div className="archived-customer-heading">

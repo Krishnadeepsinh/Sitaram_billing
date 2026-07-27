@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -75,10 +74,11 @@ import {
 } from "../lib/date";
 import {
   formatRupees,
-  paymentAmountAfterDiscount,
   rupeesToPaise,
 } from "../lib/money";
+import { useDebouncedValue } from "../lib/hooks";
 import { InvoiceForm } from "../components/InvoiceForm";
+import { PaymentAmountFields } from "../components/PaymentAmountFields";
 import { downloadCsv } from "../lib/csv";
 
 type Notice = { kind: "success" | "error"; message: string } | undefined;
@@ -133,11 +133,14 @@ export function DashboardPage({
           <p className="eyebrow">Live billing control</p>
           <h2>Dashboard</h2>
           <p className="dashboard-period">{formatBusinessDate(range.from)} → {formatBusinessDate(range.to)}</p>
-          <p>
-            {report.dataQualityCount
-              ? `${report.dataQualityCount} subscriber record(s) need billing setup.`
-              : "All active subscriber records are ready for billing."}
-          </p>
+          <div className="dashboard-context" aria-label="Workspace status">
+            <span><strong>{report.activeSubscribers}</strong> active subscribers</span>
+            <span className={report.dataQualityCount ? "needs-attention" : "ready"}>
+              {report.dataQualityCount
+                ? `${report.dataQualityCount} need billing setup`
+                : "Billing setup complete"}
+            </span>
+          </div>
         </div>
         <div className="dashboard-range">
           <label>
@@ -220,13 +223,6 @@ export function DashboardPage({
           label="Pending dues"
           value={formatRupees(report.outstandingPaise)}
           hint="Action required"
-        />
-        <Metric
-          icon={<Users />}
-          tone="blue"
-          label="Active subscribers"
-          value={String(report.activeSubscribers)}
-          hint="Currently active records"
         />
       </section>
       <section className="quick-actions" aria-label="Quick actions">
@@ -363,7 +359,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
   const [notice, setNotice] = useState<Notice>();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [billingDialog, setBillingDialog] = useState<"single" | "bulk">();
+  const [billingDialog, setBillingDialog] = useState<"single" | "bulk" | "due">();
   const [invoiceTotal, setInvoiceTotal] = useState(0);
   const [invoiceOffset, setInvoiceOffset] = useState(0);
   const [bulkSelection, setBulkSelection] = useState<number[]>([]);
@@ -377,11 +373,11 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
     from: "",
     to: "",
   });
-  const deferredQuery = useDeferredValue(query);
+  const deferredQuery = useDebouncedValue(query, 300);
   const refresh = useCallback(() => {
     setLoading(true);
     Promise.all([
-      listCustomers(serviceType),
+      listCustomers(serviceType, '', false, { limit: 500 }),
       listAreas(serviceType),
       listInvoices(
         serviceType,
@@ -393,7 +389,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
       getSettings(),
     ])
       .then(([nextCustomers, nextAreas, nextInvoices, nextSettings]) => {
-        setCustomers(nextCustomers);
+        setCustomers(nextCustomers.items);
         setAreas(nextAreas);
         setInvoices(nextInvoices.items);
         setInvoiceTotal(nextInvoices.total);
@@ -417,6 +413,9 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
       customer.planIsActive &&
       customer.installationDate &&
       customer.nextBillingStartDate,
+  );
+  const dueBillable = billable.filter(
+    (customer) => customer.nextBillingStartDate! <= today,
   );
 
   async function submitBulk(event: FormEvent<HTMLFormElement>) {
@@ -566,7 +565,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
         title="Invoices"
         subtitle="Manage 30-day service coverage, billing, and payment collections."
         action={
-          <div className="page-actions">
+          <div className="page-actions invoice-page-actions">
             <button
               className="secondary"
               disabled={submitting}
@@ -585,6 +584,21 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
             </button>
             <button
               className="primary"
+              disabled={!dueBillable.length || submitting}
+              title={
+                dueBillable.length
+                  ? "Generate complete cycles for subscribers due today or earlier"
+                  : "No subscribers are due for billing"
+              }
+              onClick={() => {
+                setBulkSelection(dueBillable.map((customer) => customer.id));
+                setBillingDialog("due");
+              }}
+            >
+              <CalendarDays size={16} /> Bill All Due
+            </button>
+            <button
+              className="secondary"
               onClick={() => setBillingDialog("single")}
             >
               <FilePlus2 size={16} /> New Invoice
@@ -892,8 +906,11 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
           />
         </Modal>
       )}
-      {billingDialog === "bulk" && (
-        <Modal title="Bulk Billing" onClose={() => setBillingDialog(undefined)}>
+      {(billingDialog === "bulk" || billingDialog === "due") && (
+        <Modal
+          title={billingDialog === "due" ? "Generate Due Invoices" : "Bulk Billing"}
+          onClose={() => setBillingDialog(undefined)}
+        >
           <form className="modal-form single-column" onSubmit={submitBulk}>
             <label>
               Bill Complete Cycles Through *
@@ -937,8 +954,9 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
               </div>
             </fieldset>
             <p className="form-help">
-              Leave every customer unchecked to bill all eligible customers.
-              Existing periods and incomplete cycles are skipped safely.
+              {billingDialog === "due"
+                ? "Only active subscribers due today or earlier are selected. Future billing dates are excluded. Existing periods and incomplete cycles are skipped safely."
+                : "Leave every customer unchecked to bill all eligible customers. Existing periods and incomplete cycles are skipped safely."}
             </p>
             <div className="modal-actions">
               <button
@@ -1077,7 +1095,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
   const [paymentRequestKey, setPaymentRequestKey] = useState(() =>
     crypto.randomUUID(),
   );
-  const deferredPaymentQuery = useDeferredValue(filters.query);
+  const deferredPaymentQuery = useDebouncedValue(filters.query, 300);
   const paymentRequestFilters = useMemo(
     () => ({
       query: deferredPaymentQuery,
@@ -1097,12 +1115,12 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
   const refresh = useCallback(() => {
     setLoading(true);
     Promise.all([
-      listCustomers(serviceType),
+      listCustomers(serviceType, '', false, { limit: 500 }),
       listPayments(serviceType, paymentRequestFilters),
       getSettings(),
     ])
       .then(([active, nextPayments, nextSettings]) => {
-        setCustomers(active);
+        setCustomers(active.items);
         setPayments(nextPayments.items);
         setPaymentTotal(nextPayments.total);
         setSettings(nextSettings ?? undefined);
@@ -1140,6 +1158,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
         amountReceivedPaise: rupeesToPaise(String(data.get("amount"))),
         discountGivenPaise: rupeesToPaise(String(data.get("discount") || "0")),
         paymentMode: data.get("paymentMode") === "upi" ? "upi" : "cash",
+        paymentReference: String(data.get("paymentReference") || "").trim() || undefined,
         notes: String(data.get("notes")) || undefined,
         requestKey: paymentRequestKey,
       });
@@ -1371,6 +1390,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                         <small>
                           <Status>{payment.resultingStatus}</Status>
                         </small>
+                        {payment.paymentReference ? <small>Ref {payment.paymentReference}</small> : null}
                       </td>
                       <td data-label="Customer">{payment.customerName}</td>
                       <td data-label="Date">
@@ -1540,42 +1560,24 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
               </label>
             </div>
             <label>
-              Amount Received (₹) *
+              UTR / Payment Reference
               <input
-                key={customerId}
-                name="amount"
-                inputMode="decimal"
-                pattern="\d+(\.\d{1,2})?"
-                defaultValue={
-                  customer && adjustedDue ? (adjustedDue / 100).toFixed(2) : ""
-                }
-                required
-              />
-            </label>
-            <label>
-              Discount (₹)
-              <input
-                key={customerId}
-                name="discount"
-                inputMode="decimal"
-                pattern="\d+(\.\d{1,2})?"
-                defaultValue="0"
-                disabled={Boolean(customer?.unbilledOpeningDuePaise)}
-                onChange={(event) => {
-                  const amount =
-                    event.currentTarget.form?.elements.namedItem("amount");
-                  if (amount instanceof HTMLInputElement)
-                    amount.value = paymentAmountAfterDiscount(
-                      adjustedDue,
-                      event.currentTarget.value,
-                    );
-                }}
+                name="paymentReference"
+                maxLength={120}
+                autoComplete="off"
+                placeholder="Recommended for UPI or bank transfer"
               />
             </label>
             <p className="form-help">
-              The discount reduces the amount received and settles invoice dues
-              only. It never creates advance credit.
+              Enter the UTR or transaction reference when available. The system will warn if it was already recorded.
             </p>
+            {customer ? (
+              <PaymentAmountFields
+                key={customerId}
+                duePaise={adjustedDue}
+                holdAsCredit={customer.unbilledOpeningDuePaise > 0}
+              />
+            ) : null}
             <label>
               Notes
               <input name="notes" maxLength={500} />
@@ -2262,8 +2264,8 @@ export function RemindersPage({ serviceType }: { serviceType: ServiceType }) {
   const [error, setError] = useState("");
   const today = todayInBusinessTimezone();
   useEffect(() => {
-    listCustomers(serviceType)
-      .then(setCustomers)
+    listCustomers(serviceType, '', false, { limit: 500 })
+      .then((result) => setCustomers(result.items))
       .catch((cause: Error) => setError(cause.message));
   }, [serviceType]);
   const actionable = customers.filter(
@@ -2664,6 +2666,7 @@ function PaymentDetailView({ payment }: { payment: PaymentDetail }) {
         label="Amount received"
         value={formatRupees(payment.amountReceivedPaise)}
       />
+      <Detail label="UTR / payment reference" value={payment.paymentReference || "—"} />
       <Detail
         label="Discount"
         value={formatRupees(payment.discountGivenPaise)}

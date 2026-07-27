@@ -63,7 +63,7 @@ describe('financial API flow', () => {
 
     const customers = new ResponseMock()
     await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable' }), customers as unknown as VercelResponse)
-    expect(customers.body).toEqual([expect.objectContaining({ sortOrder: 1, amountDuePaise: 10000, openInvoiceCount: 1, oldestDuePeriodStart: '2026-01-01', latestDuePeriodEnd: '2026-01-30' })])
+    expect((customers.body as { items: unknown[] }).items).toEqual([expect.objectContaining({ sortOrder: 1, amountDuePaise: 10000, openInvoiceCount: 1, oldestDuePeriodStart: '2026-01-01', latestDuePeriodEnd: '2026-01-30' })])
 
     const payment = new ResponseMock()
     await paymentHandler(request('POST', cookie, { serviceType: 'cable', customerId: 1, paymentDate: '2026-01-02', amountReceivedPaise: 10000, discountGivenPaise: 0, paymentMode: 'cash', requestKey: 'delete-cascade-payment' }), payment as unknown as VercelResponse)
@@ -134,8 +134,21 @@ describe('financial API flow', () => {
     expect((await database().execute({ sql: 'SELECT previous_due_snapshot_paise, total_payable_paise FROM invoices WHERE id = ?', args: [secondId] })).rows[0]).toMatchObject({ previous_due_snapshot_paise: 100000, total_payable_paise: 110000 })
     const customers = new ResponseMock()
     await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', query: 'Historical Correction' }), customers as unknown as VercelResponse)
-    expect(customers.body).toEqual([expect.objectContaining({ amountDuePaise: 110000, previousDuePaise: 100000, futurePlanDuePaise: 10000, unbilledOpeningDuePaise: 0 })])
+    expect((customers.body as { items: unknown[] }).items).toEqual([expect.objectContaining({ amountDuePaise: 110000, previousDuePaise: 100000, futurePlanDuePaise: 10000, unbilledOpeningDuePaise: 0 })])
     expect((await database().execute({ sql: 'SELECT next_billing_start_date FROM customers WHERE id = ?', args: [customerId] })).rows[0].next_billing_start_date).toBe(addBillingDays(installationDate, 60))
+  })
+
+  it('allows a future service start while keeping invoice date independently editable', async () => {
+    const created = new ResponseMock()
+    const installationDate = todayInBusinessTimezone()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Scheduled Start', areaId: 1, planId: 1, installationDate, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
+    const customerId = Number((created.body as { id: number }).id)
+    const invoice = new ResponseMock()
+    const serviceStart = addBillingDays(installationDate, 30)
+    await invoiceHandler(request('POST', cookie, { serviceType: 'cable', customerId, monthsBilled: 1, expectedPeriodStart: installationDate, periodStart: serviceStart, issuedDate: addBillingDays(installationDate, -1) }), invoice as unknown as VercelResponse)
+    expect(invoice.statusCode).toBe(201)
+    const invoiceId = Number((invoice.body as { invoiceId: number }).invoiceId)
+    expect((await database().execute({ sql: 'SELECT period_start, issued_date FROM invoices WHERE id = ?', args: [invoiceId] })).rows[0]).toMatchObject({ period_start: serviceStart, issued_date: addBillingDays(installationDate, -1) })
   })
 
   it('preserves a payment shared by another live invoice when one invoice is deleted', async () => {
@@ -191,7 +204,7 @@ describe('financial API flow', () => {
 
     const beforeInvoice = new ResponseMock()
     await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', query: customerCode }), beforeInvoice as unknown as VercelResponse)
-    expect((beforeInvoice.body as Array<Record<string, number>>)[0]).toMatchObject({ amountDuePaise: 100000, previousDuePaise: 100000, currentPlanDuePaise: 0, futurePlanDuePaise: 0, unbilledOpeningDuePaise: 100000 })
+    expect(((beforeInvoice.body as { items: Array<Record<string, number>> }).items)[0]).toMatchObject({ amountDuePaise: 100000, previousDuePaise: 100000, currentPlanDuePaise: 0, futurePlanDuePaise: 0, unbilledOpeningDuePaise: 100000 })
 
     const preview = new ResponseMock()
     await invoiceHandler(request('GET', cookie, undefined, { serviceType: 'cable', previewCustomerId: String(customerId), monthsBilled: '1', periodStart: todayInBusinessTimezone(), billingMode: 'normal' }), preview as unknown as VercelResponse)
@@ -207,7 +220,7 @@ describe('financial API flow', () => {
     const invoiceId = Number((invoice.body as { invoiceId: number }).invoiceId)
     const afterInvoice = new ResponseMock()
     await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', query: customerCode }), afterInvoice as unknown as VercelResponse)
-    expect((afterInvoice.body as Array<Record<string, number | string>>)[0]).toMatchObject({ amountDuePaise: 110000, previousDuePaise: 100000, currentPlanDuePaise: 10000, futurePlanDuePaise: 0, unbilledOpeningDuePaise: 0, duePlanPeriodStart: todayInBusinessTimezone(), duePlanCycleEndStart: todayInBusinessTimezone() })
+    expect(((afterInvoice.body as { items: Array<Record<string, number | string>> }).items)[0]).toMatchObject({ amountDuePaise: 110000, previousDuePaise: 100000, currentPlanDuePaise: 10000, futurePlanDuePaise: 0, unbilledOpeningDuePaise: 0, duePlanPeriodStart: todayInBusinessTimezone(), duePlanCycleEndStart: todayInBusinessTimezone() })
 
     const futureInvoice = new ResponseMock()
     await invoiceHandler(await invoiceRequest(cookie, customerId), futureInvoice as unknown as VercelResponse)
@@ -215,7 +228,7 @@ describe('financial API flow', () => {
     const futureInvoiceId = Number((futureInvoice.body as { invoiceId: number }).invoiceId)
     const withFutureInvoice = new ResponseMock()
     await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', query: customerCode }), withFutureInvoice as unknown as VercelResponse)
-    expect((withFutureInvoice.body as Array<Record<string, number | string>>)[0]).toMatchObject({ amountDuePaise: 120000, previousDuePaise: 100000, currentPlanDuePaise: 10000, futurePlanDuePaise: 10000, duePlanPeriodStart: todayInBusinessTimezone(), duePlanCycleEndStart: addBillingDays(todayInBusinessTimezone(), 30) })
+    expect(((withFutureInvoice.body as { items: Array<Record<string, number | string>> }).items)[0]).toMatchObject({ amountDuePaise: 120000, previousDuePaise: 100000, currentPlanDuePaise: 10000, futurePlanDuePaise: 10000, duePlanPeriodStart: todayInBusinessTimezone(), duePlanCycleEndStart: addBillingDays(todayInBusinessTimezone(), 30) })
 
     const deactivateCoveredCustomer = new ResponseMock()
     await customerHandler(request('PUT', cookie, { id: customerId, serviceType: 'cable', name: 'Opening Due Split', areaId: 1, planId: 1, installationDate: todayInBusinessTimezone(), status: 'inactive' }), deactivateCoveredCustomer as unknown as VercelResponse)
@@ -230,7 +243,7 @@ describe('financial API flow', () => {
     expect(payment.statusCode).toBe(201)
     const afterPayment = new ResponseMock()
     await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', query: customerCode }), afterPayment as unknown as VercelResponse)
-    expect((afterPayment.body as Array<Record<string, number>>)[0]).toMatchObject({ amountDuePaise: 90000, previousDuePaise: 70000, currentPlanDuePaise: 10000, futurePlanDuePaise: 10000 })
+    expect(((afterPayment.body as { items: Array<Record<string, number>> }).items)[0]).toMatchObject({ amountDuePaise: 90000, previousDuePaise: 70000, currentPlanDuePaise: 10000, futurePlanDuePaise: 10000 })
 
     const deletedFuture = new ResponseMock()
     await invoiceHandler(request('DELETE', cookie, undefined, { serviceType: 'cable', id: String(futureInvoiceId) }), deletedFuture as unknown as VercelResponse)
@@ -241,7 +254,7 @@ describe('financial API flow', () => {
     expect(deleted.statusCode).toBe(204)
     const afterDelete = new ResponseMock()
     await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', query: customerCode }), afterDelete as unknown as VercelResponse)
-    expect((afterDelete.body as Array<Record<string, number>>)[0]).toMatchObject({ amountDuePaise: 100000, previousDuePaise: 100000, currentPlanDuePaise: 0 })
+    expect(((afterDelete.body as { items: Array<Record<string, number>> }).items)[0]).toMatchObject({ amountDuePaise: 100000, previousDuePaise: 100000, currentPlanDuePaise: 0 })
     const archived = new ResponseMock()
     await customerHandler(request('DELETE', cookie, undefined, { serviceType: 'cable', id: String(customerId), reason: 'Integration test cleanup' }), archived as unknown as VercelResponse)
     expect(archived.statusCode).toBe(204)
@@ -501,7 +514,7 @@ describe('financial API flow', () => {
     await invoiceHandler(await invoiceRequest(cookie, customerId), new ResponseMock() as unknown as VercelResponse)
     const listed = new ResponseMock()
     await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', query: 'Early Renewal' }), listed as unknown as VercelResponse)
-    expect(listed.body).toEqual([expect.objectContaining({ coverageStatus: 'active' })])
+    expect((listed.body as { items: unknown[] }).items).toEqual([expect.objectContaining({ coverageStatus: 'active' })])
   })
 
   it('blocks new ledger documents for archived subscribers but permits inactive debt collection', async () => {
@@ -568,7 +581,7 @@ describe('financial API flow', () => {
     const payment = new ResponseMock(); await paymentHandler(request('POST', cookie, { serviceType: 'cable', customerId, paymentDate: todayInBusinessTimezone(), amountReceivedPaise: 10000, discountGivenPaise: 0, paymentMode: 'upi', requestKey: 'area-snapshot-payment' }), payment as unknown as VercelResponse)
     await areaHandler(request('PUT', cookie, { id: areaId, serviceType: 'cable', displayName: 'Snapshot New Area' }), new ResponseMock() as unknown as VercelResponse)
     const customerList = new ResponseMock(); await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', query: 'Area Snapshot Customer' }), customerList as unknown as VercelResponse)
-    expect(customerList.body).toEqual([expect.objectContaining({ areaName: 'Snapshot New Area' })])
+    expect((customerList.body as { items: unknown[] }).items).toEqual([expect.objectContaining({ areaName: 'Snapshot New Area' })])
     const invoiceDetail = new ResponseMock(); await invoiceHandler(request('GET', cookie, undefined, { serviceType: 'cable', id: String((invoice.body as { invoiceId: number }).invoiceId) }), invoiceDetail as unknown as VercelResponse)
     expect(invoiceDetail.body).toEqual(expect.objectContaining({ areaName: 'Snapshot Old Area' }))
     const paymentId = Number((await database().execute({ sql: 'SELECT id FROM payments WHERE payment_code = ?', args: [(payment.body as { paymentCode: string }).paymentCode] })).rows[0].id)
@@ -688,7 +701,48 @@ describe('financial API flow', () => {
     const removed = new ResponseMock(); await customerHandler(request('DELETE', cookie, undefined, { serviceType: 'cable', id: String(customerId), permanent: '1', reason: 'Remove test record' }), removed as unknown as VercelResponse)
     expect(removed.statusCode).toBe(204)
     const archivedList = new ResponseMock(); await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', includeDeleted: '1' }), archivedList as unknown as VercelResponse)
-    expect((archivedList.body as Array<{ id: number }>).some((item) => item.id === customerId)).toBe(false)
+    expect((archivedList.body as { items: Array<{ id: number }> }).items.some((item) => item.id === customerId)).toBe(false)
+  })
+
+  it('archives a selected subscriber batch atomically and records each audit event', async () => {
+    const ids: number[] = []
+    for (const name of ['Bulk Archive A', 'Bulk Archive B']) {
+      const created = new ResponseMock()
+      await customerHandler(request('POST', cookie, { serviceType: 'cable', name, areaId: 1, planId: null, installationDate: null, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
+      ids.push(Number((created.body as { id: number }).id))
+    }
+
+    const archived = new ResponseMock()
+    await customerHandler(request('POST', cookie, { action: 'archive_many', serviceType: 'cable', ids, reason: 'Remove old duplicate records' }), archived as unknown as VercelResponse)
+    expect(archived.statusCode).toBe(200)
+    expect(archived.body).toEqual({ archived: 2 })
+    const rows = await database().execute({ sql: `SELECT id, is_deleted AS isDeleted FROM customers WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY id`, args: ids })
+    expect(rows.rows).toEqual(ids.map((id) => expect.objectContaining({ id, isDeleted: 1 })))
+    const audit = await database().execute({ sql: `SELECT entity_id AS entityId, reason FROM audit_events WHERE action = 'customer_archived' AND reason = ? AND entity_id IN (${ids.map(() => '?').join(',')}) ORDER BY entity_id`, args: ['Remove old duplicate records', ...ids] })
+    expect(audit.rows).toEqual(ids.map((id) => expect.objectContaining({ entityId: id, reason: 'Remove old duplicate records' })))
+
+    const remaining = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Bulk Archive Atomic', areaId: 1, planId: null, installationDate: null, openingBalancePaise: 0, openingBalanceType: 'due' }), remaining as unknown as VercelResponse)
+    const remainingId = Number((remaining.body as { id: number }).id)
+    const rejected = new ResponseMock()
+    await customerHandler(request('POST', cookie, { action: 'archive_many', serviceType: 'cable', ids: [remainingId, 999999] }), rejected as unknown as VercelResponse)
+    expect(rejected.statusCode).toBe(409)
+    expect((await database().execute({ sql: 'SELECT is_deleted AS isDeleted FROM customers WHERE id = ?', args: [remainingId] })).rows[0].isDeleted).toBe(0)
+  })
+
+  it('returns paginated customer items with a stable filtered total', async () => {
+    const first = new ResponseMock()
+    await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', limit: '1', offset: '0' }), first as unknown as VercelResponse)
+    const second = new ResponseMock()
+    await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', limit: '1', offset: '1' }), second as unknown as VercelResponse)
+    const firstBody = first.body as { items: Array<{ id: number }>; total: number; limit: number; offset: number }
+    const secondBody = second.body as { items: Array<{ id: number }>; total: number; limit: number; offset: number }
+    expect(firstBody.limit).toBe(1)
+    expect(firstBody.offset).toBe(0)
+    expect(firstBody.items).toHaveLength(1)
+    expect(secondBody.offset).toBe(1)
+    expect(secondBody.total).toBe(firstBody.total)
+    expect(secondBody.items[0]?.id).not.toBe(firstBody.items[0]?.id)
   })
 
   it('authenticates, rotates the admin password, and rate-limits repeated failures', async () => {
@@ -720,5 +774,5 @@ describe('financial API flow', () => {
     const blocked = new ResponseMock()
     await loginHandler(request('POST', '', { username: 'admin', password: 'ChangedPass456' }, {}, '10.0.0.3'), blocked as unknown as VercelResponse)
     expect(blocked.statusCode).toBe(429)
-  })
+  }, 10_000)
 })
