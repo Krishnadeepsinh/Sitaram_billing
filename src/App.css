@@ -998,3 +998,25 @@ body { overflow-x:hidden; }
   .subscriber-page-actions,.invoice-page-actions,.dashboard-page .quick-actions { grid-template-columns:1fr; }
   .subscriber-page-actions .primary { grid-column:auto; }
 }
+
+/* Payment entry keeps actual receipts and approved discounts independent. */
+.payment-settlement { display:grid; gap:14px; min-width:0; padding:16px; border:1px solid var(--border); border-radius:14px; background:color-mix(in srgb,var(--secondary) 62%,var(--card)); }
+.payment-settlement-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.payment-settlement-heading>div { display:grid; gap:3px; }
+.payment-settlement-heading strong { color:var(--foreground); font-size:14px; line-height:20px; }
+.payment-settlement-heading span { color:var(--muted); font-size:12px; font-weight:400; line-height:18px; }
+.payment-settlement-fields,.payment-settlement-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.payment-settlement-fields label { min-width:0; }
+.payment-settlement-help { margin:0; }
+.payment-settle-button { min-height:40px!important; padding:8px 12px; flex:none; white-space:nowrap; font-size:12px; }
+.payment-settlement-summary { margin:0; padding-top:13px; border-top:1px solid var(--border); }
+.payment-settlement-summary>div { display:grid; gap:3px; min-width:0; }
+.payment-settlement-summary dt { color:var(--muted); font-size:10px; font-weight:700; line-height:14px; letter-spacing:.05em; text-transform:uppercase; }
+.payment-settlement-summary dd { margin:0; color:var(--foreground); font-family:var(--font-data); font-size:13px; font-weight:700; line-height:19px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+
+@media(max-width:620px) {
+  .payment-settlement { padding:14px; }
+  .payment-settlement-heading { align-items:stretch; flex-direction:column; }
+  .payment-settle-button { width:100%; min-height:44px!important; }
+  .payment-settlement-fields,.payment-settlement-summary { grid-template-columns:1fr; }
+}

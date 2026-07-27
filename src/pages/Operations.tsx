@@ -74,11 +74,11 @@ import {
 } from "../lib/date";
 import {
   formatRupees,
-  paymentAmountAfterDiscount,
   rupeesToPaise,
 } from "../lib/money";
 import { useDebouncedValue } from "../lib/hooks";
 import { InvoiceForm } from "../components/InvoiceForm";
+import { PaymentAmountFields } from "../components/PaymentAmountFields";
 import { downloadCsv } from "../lib/csv";
 
 type Notice = { kind: "success" | "error"; message: string } | undefined;
@@ -1571,43 +1571,13 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
             <p className="form-help">
               Enter the UTR or transaction reference when available. The system will warn if it was already recorded.
             </p>
-            <label>
-              Amount Received (₹) *
-              <input
+            {customer ? (
+              <PaymentAmountFields
                 key={customerId}
-                name="amount"
-                inputMode="decimal"
-                pattern="\d+(\.\d{1,2})?"
-                defaultValue={
-                  customer && adjustedDue ? (adjustedDue / 100).toFixed(2) : ""
-                }
-                required
+                duePaise={adjustedDue}
+                holdAsCredit={customer.unbilledOpeningDuePaise > 0}
               />
-            </label>
-            <label>
-              Discount (₹)
-              <input
-                key={customerId}
-                name="discount"
-                inputMode="decimal"
-                pattern="\d+(\.\d{1,2})?"
-                defaultValue="0"
-                disabled={Boolean(customer?.unbilledOpeningDuePaise)}
-                onChange={(event) => {
-                  const amount =
-                    event.currentTarget.form?.elements.namedItem("amount");
-                  if (amount instanceof HTMLInputElement)
-                    amount.value = paymentAmountAfterDiscount(
-                      adjustedDue,
-                      event.currentTarget.value,
-                    );
-                }}
-              />
-            </label>
-            <p className="form-help">
-              The discount reduces the amount received and settles invoice dues
-              only. It never creates advance credit.
-            </p>
+            ) : null}
             <label>
               Notes
               <input name="notes" maxLength={500} />

@@ -18,9 +18,9 @@ import {
 } from "lucide-react";
 import {
   formatRupees,
-  paymentAmountAfterDiscount,
   rupeesToPaise,
 } from "../lib/money";
+import { PaymentAmountFields } from "../components/PaymentAmountFields";
 import {
   billingCyclePosition,
   formatBusinessDate,
@@ -1754,60 +1754,14 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 <option value="upi">UPI</option>
               </select>
             </label>
-            <label>
-              Amount Received (₹)
-              <input
-                name="amount"
-                autoComplete="off"
-                inputMode="decimal"
-                pattern="\d+(\.\d{1,2})?"
-                defaultValue={
-                  Math.max(
-                    0,
-                    quickPayment.amountDuePaise -
-                      quickPayment.creditBalancePaise,
-                  )
-                    ? (
-                        Math.max(
-                          0,
-                          quickPayment.amountDuePaise -
-                            quickPayment.creditBalancePaise,
-                        ) / 100
-                      ).toFixed(2)
-                    : ""
-                }
-                required
-              />
-            </label>
-            <label>
-              Discount (₹)
-              <input
-                name="discount"
-                autoComplete="off"
-                inputMode="decimal"
-                pattern="\d+(\.\d{1,2})?"
-                defaultValue="0"
-                required
-                disabled={quickPayment.unbilledOpeningDuePaise > 0}
-                onChange={(event) => {
-                  const amount =
-                    event.currentTarget.form?.elements.namedItem("amount");
-                  if (amount instanceof HTMLInputElement)
-                    amount.value = paymentAmountAfterDiscount(
-                      Math.max(
-                        0,
-                        quickPayment.amountDuePaise -
-                          quickPayment.creditBalancePaise,
-                      ),
-                      event.currentTarget.value,
-                    );
-                }}
-              />
-            </label>
-            <p className="form-help full-field">
-              The discount reduces the amount received and settles invoice dues
-              only. It never creates advance credit.
-            </p>
+            <PaymentAmountFields
+              key={quickPayment.id}
+              duePaise={Math.max(
+                0,
+                quickPayment.amountDuePaise - quickPayment.creditBalancePaise,
+              )}
+              holdAsCredit={quickPayment.unbilledOpeningDuePaise > 0}
+            />
             <label className="full-field">
               UTR / Payment Reference
               <input
