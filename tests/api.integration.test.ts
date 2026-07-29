@@ -151,6 +151,72 @@ describe('financial API flow', () => {
     expect((await database().execute({ sql: 'SELECT period_start, issued_date FROM invoices WHERE id = ?', args: [invoiceId] })).rows[0]).toMatchObject({ period_start: serviceStart, issued_date: addBillingDays(installationDate, -1) })
   })
 
+  it('fills a missed previous period without moving or duplicating the normal renewal position', async () => {
+    const today = todayInBusinessTimezone()
+    const installationDate = addBillingDays(today, -90)
+    const missedPeriodStart = installationDate
+    const laterPeriodStart = addBillingDays(installationDate, 30)
+    const nextAfterLaterPeriod = addBillingDays(laterPeriodStart, 30)
+    const created = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Missed Period Recovery', areaId: 1, planId: 1, installationDate, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
+    const customerId = Number((created.body as { id: number }).id)
+
+    const laterInvoice = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, { serviceType: 'cable', customerId, monthsBilled: 1, expectedPeriodStart: today, periodStart: laterPeriodStart }), laterInvoice as unknown as VercelResponse)
+    expect(laterInvoice.statusCode).toBe(201)
+
+    const blockedNormalBackdate = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, { serviceType: 'cable', customerId, monthsBilled: 1, expectedPeriodStart: nextAfterLaterPeriod, periodStart: missedPeriodStart }), blockedNormalBackdate as unknown as VercelResponse)
+    expect(blockedNormalBackdate.statusCode).toBe(409)
+    expect(blockedNormalBackdate.body).toEqual({ error: expect.stringContaining('Use Missed Previous Period') })
+
+    const preview = new ResponseMock()
+    await invoiceHandler(request('GET', cookie, undefined, { serviceType: 'cable', previewCustomerId: String(customerId), monthsBilled: '1', periodStart: missedPeriodStart, billingMode: 'historical' }), preview as unknown as VercelResponse)
+    expect(preview.statusCode).toBe(200)
+    expect(preview.body).toEqual(expect.objectContaining({ planName: 'Prime', conflict: null, nextEligibleDate: nextAfterLaterPeriod }))
+
+    const missedInvoiceBody = { serviceType: 'cable', customerId, monthsBilled: 1, expectedPeriodStart: nextAfterLaterPeriod, periodStart: missedPeriodStart, billingMode: 'historical', historicalReason: 'Previous service period was recorded late' }
+    const missedInvoice = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, missedInvoiceBody), missedInvoice as unknown as VercelResponse)
+    expect(missedInvoice.statusCode).toBe(201)
+    expect((await database().execute({ sql: 'SELECT billing_mode, historical_reason, period_start, period_end FROM invoices WHERE id = ?', args: [(missedInvoice.body as { invoiceId: number }).invoiceId] })).rows[0]).toMatchObject({
+      billing_mode: 'historical',
+      historical_reason: 'Previous service period was recorded late',
+      period_start: missedPeriodStart,
+      period_end: addBillingDays(missedPeriodStart, 29),
+    })
+    expect((await database().execute({ sql: 'SELECT next_billing_start_date FROM customers WHERE id = ?', args: [customerId] })).rows[0].next_billing_start_date).toBe(nextAfterLaterPeriod)
+
+    const replay = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, missedInvoiceBody), replay as unknown as VercelResponse)
+    expect(replay.statusCode).toBe(200)
+    expect(replay.body).toEqual(expect.objectContaining({ replayed: true, invoiceCode: (missedInvoice.body as { invoiceCode: string }).invoiceCode }))
+
+    const overlap = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, { ...missedInvoiceBody, periodStart: addBillingDays(missedPeriodStart, 1), historicalReason: 'Attempted duplicate missed period' }), overlap as unknown as VercelResponse)
+    expect(overlap.statusCode).toBe(409)
+    expect(overlap.body).toEqual({ error: expect.stringContaining('already covers') })
+  })
+
+  it('rejects missed periods before installation or whose full cycle has not ended', async () => {
+    const today = todayInBusinessTimezone()
+    const installationDate = addBillingDays(today, -60)
+    const created = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Missed Period Boundaries', areaId: 1, planId: 1, installationDate, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
+    const customerId = Number((created.body as { id: number }).id)
+    const base = { serviceType: 'cable', customerId, monthsBilled: 1, expectedPeriodStart: today, billingMode: 'historical', historicalReason: 'Missed billing boundary check' }
+
+    const beforeInstallation = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, { ...base, periodStart: addBillingDays(installationDate, -30) }), beforeInstallation as unknown as VercelResponse)
+    expect(beforeInstallation.statusCode).toBe(400)
+    expect(beforeInstallation.body).toEqual({ error: expect.stringContaining('cannot start before installation') })
+
+    const unfinishedCycle = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, { ...base, periodStart: addBillingDays(today, -28) }), unfinishedCycle as unknown as VercelResponse)
+    expect(unfinishedCycle.statusCode).toBe(400)
+    expect(unfinishedCycle.body).toEqual({ error: expect.stringContaining('must end today or earlier') })
+  })
+
   it('preserves a payment shared by another live invoice when one invoice is deleted', async () => {
     const created = new ResponseMock()
     await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Shared Payment Deletion', areaId: 1, planId: 1, installationDate: todayInBusinessTimezone(), openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)

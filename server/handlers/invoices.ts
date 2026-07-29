@@ -40,14 +40,18 @@ export default async function handler(request: VercelRequest, response: VercelRe
         if (!customer.rows[0]) return sendError(response, 404, 'Customer not found.')
         let planName = customer.rows[0].planName; let pricePaise = customer.rows[0].pricePaise
         if (billingMode === 'historical') {
-          const historicalPlan = await db.execute({ sql: `SELECT plan_name_snapshot AS planName, price_paise_snapshot AS pricePaise FROM customer_plan_history WHERE customer_id = ? AND effective_date <= ? ORDER BY effective_date DESC, id DESC LIMIT 1`, args: [customerId, period.periodStart] })
+          const historicalPlan = await db.execute({ sql: `SELECT planName, pricePaise FROM (
+            SELECT plan_name_snapshot AS planName, price_paise_snapshot AS pricePaise, effective_date AS effectiveDate, created_at AS createdAt FROM customer_plan_history WHERE customer_id = ?
+            UNION ALL SELECT NULL, NULL, effective_date, created_at FROM customer_plan_gaps WHERE customer_id = ?
+            ) WHERE effectiveDate <= ? ORDER BY effectiveDate DESC, createdAt DESC LIMIT 1`, args: [customerId, customerId, period.periodStart] })
           planName = historicalPlan.rows[0]?.planName ?? null; pricePaise = historicalPlan.rows[0]?.pricePaise ?? null
         }
         const conflict = await db.execute({ sql: `SELECT invoice_code AS invoiceCode, period_start AS periodStart, period_end AS periodEnd FROM invoices WHERE customer_id = ? AND is_deleted = 0 AND is_merged = 0 AND period_start <= ? AND period_end >= ? ORDER BY period_start LIMIT 1`, args: [customerId, period.periodEnd, period.periodStart] })
         const currentChargePaise = Number(pricePaise ?? 0) * monthsBilled
         const openingDuePaise = Number(customer.rows[0].invoiceCount) === 0 && customer.rows[0].openingBalanceType === 'due' ? Number(customer.rows[0].openingBalancePaise) : 0
         const previousDuePaise = Number(customer.rows[0].outstandingDuePaise) + openingDuePaise
-        return response.status(200).json({ customerName: customer.rows[0].name, ...period, planName, pricePaise: Number(pricePaise ?? 0), currentChargePaise, previousDuePaise, totalPayablePaise: currentChargePaise + previousDuePaise, currentCoverageEnd: customer.rows[0].currentCoverageEnd, currentNextBillingDate: customer.rows[0].nextBillingStartDate, nextEligibleDate: nextEligibleBillingDate(period.periodEnd), conflict: conflict.rows[0] ?? null })
+        const projectedCoverageEnd = !customer.rows[0].currentCoverageEnd || period.periodEnd > String(customer.rows[0].currentCoverageEnd) ? period.periodEnd : String(customer.rows[0].currentCoverageEnd)
+        return response.status(200).json({ customerName: customer.rows[0].name, ...period, planName, pricePaise: Number(pricePaise ?? 0), currentChargePaise, previousDuePaise, totalPayablePaise: currentChargePaise + previousDuePaise, currentCoverageEnd: customer.rows[0].currentCoverageEnd, currentNextBillingDate: customer.rows[0].nextBillingStartDate, nextEligibleDate: nextEligibleBillingDate(projectedCoverageEnd), conflict: conflict.rows[0] ?? null })
       }
       if (request.query.deletePreview) {
         const invoiceId = z.coerce.number().int().positive().parse(request.query.deletePreview)

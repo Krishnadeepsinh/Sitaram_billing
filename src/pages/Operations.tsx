@@ -676,7 +676,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
             >
               <option value="">All</option>
               <option value="normal">Normal renewal</option>
-              <option value="historical">Historical gap</option>
+              <option value="historical">Missed previous period</option>
             </select>
           </label>
           <label>
