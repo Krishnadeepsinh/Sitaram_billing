@@ -311,6 +311,15 @@ body:has([aria-modal='true']) .page-content>.notice { z-index:90; }
   .service-tabs button,.billing-mode-tabs button { min-height:44px; }
   .customer-filters .search-row input,.customer-filters .search-row>.secondary,
   .customer-filter-grid select,.customer-filter-grid .due-toggle { min-height:44px; }
+  input,select,textarea,
+  .search-row input,.form-panel input,.form-panel select,.form-panel textarea,
+  .modal-form input,.modal-form select,.modal-form textarea,
+  .customer-filter-grid select,.dashboard-range input,.dashboard-range select,
+  .filter-grid input,.filter-grid select,.command-search input { font-size:16px; }
+  input:not([type='checkbox']):not([type='radio']),select,textarea { min-height:44px; }
+  .modal-compact .modal-form input:not([type='checkbox']):not([type='radio']),
+  .modal-compact .modal-form select,
+  .modal-compact .modal-form textarea { min-height:44px;font-size:16px; }
   .area-chips>span { min-height:48px;padding-block:2px; }
   .area-chips button { width:44px;height:44px;min-width:44px;min-height:44px; }
   .dashboard-page .dashboard-metrics,.dashboard-page .quick-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -321,19 +330,19 @@ body:has([aria-modal='true']) .page-content>.notice { z-index:90; }
 @media(max-width:620px) {
   .workspace-content { padding-right:max(14px,env(safe-area-inset-right));padding-bottom:calc(48px + env(safe-area-inset-bottom));padding-left:max(14px,env(safe-area-inset-left)); }
   .app-shell:has(.subscriber-bulk-bar) .workspace-content { padding-bottom:calc(146px + env(safe-area-inset-bottom)); }
-  input,select,textarea,
-  .search-row input,.form-panel input,.form-panel select,.form-panel textarea,
-  .modal-form input,.modal-form select,.modal-form textarea,
-  .customer-filter-grid select,.dashboard-range input,.dashboard-range select,
-  .filter-grid input,.filter-grid select,.command-search input { font-size:16px; }
   .primary,.secondary,.text-button,.search-row>.secondary,
   .service-tabs button,.billing-mode-tabs button,.pagination .secondary { min-height:44px; }
   .customer-filters .search-row>.secondary,.skip-link { min-height:44px; }
   .table-wrap input[type='checkbox'],.table-wrap input[type='radio'] { min-width:24px;width:24px;min-height:24px;height:24px; }
-  :is(.invoice-register,.payment-register,.expense-register,.customer-register,.plans-register) tbody td { grid-template-columns:minmax(76px,28%) minmax(0,1fr); }
-  :is(.invoice-register,.payment-register,.expense-register,.customer-register,.plans-register) tbody td[data-label='Actions'] { grid-template-columns:1fr; }
+  :is(.invoice-register,.payment-register,.expense-register,.customer-register,.plans-register) tbody tr { grid-template-columns:repeat(2,minmax(0,1fr));column-gap:14px;padding:12px; }
+  :is(.invoice-register,.payment-register,.expense-register,.customer-register,.plans-register) tbody td { min-height:52px;grid-template-columns:minmax(0,1fr);align-content:start;align-items:start;gap:3px;padding:9px 0;text-align:left; }
+  :is(.invoice-register,.payment-register,.expense-register,.customer-register,.plans-register) tbody td::before { font-size:9px;line-height:12px; }
+  :is(.invoice-register,.payment-register,.expense-register,.customer-register,.plans-register) tbody td:is([data-label='Subscriber'],[data-label='Invoice'],[data-label='Receipt'],[data-label='Plan'],[data-label='Actions']) { grid-column:1/-1; }
+  :is(.invoice-register,.payment-register,.expense-register,.customer-register,.plans-register) tbody td[data-label='Actions'] { min-height:0;margin-top:3px;padding-top:12px;border-top:1px solid var(--border); }
   :is(.invoice-register,.payment-register,.expense-register,.customer-register,.plans-register) tbody td[data-label='Actions'] .action-row { width:100%;justify-content:flex-start; }
-  :is(.invoice-register,.payment-register,.expense-register,.customer-register,.plans-register) .action-row { gap:8px; }
+  :is(.invoice-register,.payment-register,.expense-register,.customer-register,.plans-register) :is(.action-row,.entity-cell,.balance-cell,.with-icon,.with-dot,.subscriber-billing-cell) { justify-content:flex-start; }
+  :is(.invoice-register,.payment-register,.expense-register,.customer-register,.plans-register) .action-row { flex-wrap:wrap;gap:8px; }
+  .customer-register .subscriber-billing-cell { flex-wrap:wrap; }
   .panel-heading,.register-heading { flex-wrap:wrap; }
   .pagination { justify-content:center;flex-wrap:wrap;gap:8px; }
   .pagination>span { order:-1;width:100%;text-align:center; }
