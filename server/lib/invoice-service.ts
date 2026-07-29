@@ -50,15 +50,15 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
       if (existing.rows[0]) return { invoiceId: Number(existing.rows[0].id), invoiceCode: String(existing.rows[0].invoiceCode), periodStart: String(existing.rows[0].periodStart), periodEnd: String(existing.rows[0].periodEnd), nextEligibleDate: nextEligibleBillingDate(String(existing.rows[0].periodEnd)), replayed: true }
       throw new InvoiceRequestError(409, `Billing position changed. The next eligible start date is ${currentNextStart}.`, { nextEligibleDate: currentNextStart })
     }
-    if (hasInvoiceHistory && requestedStart < currentNextStart) throw new InvoiceRequestError(409, `Normal renewal cannot start before ${currentNextStart}. Use Historical Gap for an older uncovered period.`, { nextEligibleDate: currentNextStart })
+    if (hasInvoiceHistory && requestedStart < currentNextStart) throw new InvoiceRequestError(409, `Normal renewal cannot start before ${currentNextStart}. Use Missed Previous Period for an older uncovered period.`, { nextEligibleDate: currentNextStart })
   }
 
   const period = createInvoicePeriod(requestedStart, input.monthsBilled)
   if (billingMode === 'historical') {
     const reason = input.historicalReason?.trim()
-    if (!reason || reason.length < 5) throw new InvoiceRequestError(400, 'Enter a clear reason for the historical invoice.')
-    if (period.periodStart < String(row.installation_date)) throw new InvoiceRequestError(400, `Historical billing cannot start before installation on ${row.installation_date}.`)
-    if (period.periodEnd > today) throw new InvoiceRequestError(400, 'Historical invoices must end today or earlier. Use Normal Renewal for current or future coverage.')
+    if (!reason || reason.length < 5) throw new InvoiceRequestError(400, 'Enter a clear reason for the missed-period invoice.')
+    if (period.periodStart < String(row.installation_date)) throw new InvoiceRequestError(400, `Missed-period billing cannot start before installation on ${row.installation_date}.`)
+    if (period.periodEnd > today) throw new InvoiceRequestError(400, 'Missed-period invoices must end today or earlier. Use Normal Renewal for current or future coverage.')
     const status = await transaction.execute({ sql: `SELECT status FROM customer_status_history WHERE customer_id = ? AND effective_date <= ? ORDER BY effective_date DESC, id DESC LIMIT 1`, args: [input.customerId, period.periodStart] })
     const inactiveTransition = await transaction.execute({ sql: `SELECT id FROM customer_status_history WHERE customer_id = ? AND status = 'inactive' AND effective_date > ? AND effective_date <= ? LIMIT 1`, args: [input.customerId, period.periodStart, period.periodEnd] })
     if (status.rows[0]?.status !== 'active' || inactiveTransition.rows[0]) throw new InvoiceRequestError(409, 'This period includes inactive service. Choose an active uncovered period.')
