@@ -1943,7 +1943,11 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                     <button
                       className="danger-button"
                       disabled={submitting}
-                      onClick={() => { setPermanentDeleteReason(""); setPermanentlyDeleting(customer); }}
+                      onClick={() => {
+                        setPermanentDeleteReason("");
+                        setArchivedOpen(false);
+                        setPermanentlyDeleting(customer);
+                      }}
                     >
                       <Trash2 size={15} aria-hidden="true" /> Permanently Delete
                     </button>
