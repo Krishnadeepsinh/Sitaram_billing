@@ -194,7 +194,7 @@ export function PlansPage({ serviceType }: { serviceType: ServiceType }) {
         }
       />
       {notice && <NoticeMessage notice={notice} />}
-      <article className="panel table-panel register-panel plans-register">
+      <article className="panel table-panel responsive-register register-panel plans-register">
         <div className="register-heading">
           <h2>Active Plans</h2>
           <span>{plans.length} total</span>
@@ -941,7 +941,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           </label>
         </div>
       </article>
-      <article className="panel table-panel register-panel customer-register">
+      <article className="panel table-panel responsive-register register-panel customer-register">
         <div className="register-heading">
           <h2>Subscriber Directory</h2>
           <span>

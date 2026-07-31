@@ -608,7 +608,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
         }
       />
       {notice && <NoticeMessage notice={notice} />}
-      <article className="panel table-panel invoice-register">
+      <article className="panel table-panel responsive-register invoice-register">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">{serviceType} billing</p>
@@ -1300,7 +1300,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
         }
       />
       {notice && <NoticeMessage notice={notice} />}
-      <article className="panel table-panel payment-register">
+      <article className="panel table-panel responsive-register payment-register">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Collection history</p>
@@ -1759,7 +1759,7 @@ export function ExpensesPage() {
         }
       />
       {notice && <NoticeMessage notice={notice} />}
-      <article className="panel table-panel expense-register">
+      <article className="panel table-panel responsive-register expense-register">
         <div className="panel-heading">
           <h2>Expense Register</h2>
         </div>
@@ -2304,7 +2304,7 @@ export function RemindersPage({ serviceType }: { serviceType: ServiceType }) {
       {error ? (
         <ErrorNotice message={error} />
       ) : (
-        <article className="panel table-panel">
+        <article className="panel table-panel responsive-register reminder-register">
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Action queue</p>
@@ -3039,7 +3039,7 @@ function LedgerTable({
   rows: string[][];
 }) {
   return (
-    <article className="panel table-panel">
+    <article className="panel table-panel responsive-register ledger-register">
       <h2>{title}</h2>
       {rows.length ? (
         <div className="table-wrap">
