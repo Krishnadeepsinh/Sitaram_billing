@@ -471,19 +471,34 @@ body:has([aria-modal='true']) .page-content>.notice { z-index:90; }
    tables and place both scroll axes on their wrapper instead of hiding data. */
 @media(max-width:900px) {
   :is(.customer-register,.invoice-register,.payment-register) .table-wrap { max-height:min(65dvh,640px);margin:12px 0 0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch; }
-  :is(.customer-register,.invoice-register,.payment-register) .table-wrap table { display:table;width:100%;border-collapse:collapse; }
-  .customer-register .table-wrap table { min-width:1100px; }
-  .invoice-register .table-wrap table { min-width:1050px; }
-  .payment-register .table-wrap table { min-width:820px; }
+  :is(.customer-register,.invoice-register,.payment-register) .table-wrap table { display:table;width:100%;border-collapse:separate;border-spacing:0; }
+  .customer-register .table-wrap table { min-width:804px;table-layout:fixed; }
+  .invoice-register .table-wrap table { min-width:900px; }
+  .payment-register .table-wrap table { min-width:700px; }
   :is(.customer-register,.invoice-register,.payment-register) thead { position:static;display:table-header-group;width:auto;height:auto;overflow:visible;clip:auto;white-space:normal; }
   :is(.customer-register,.invoice-register,.payment-register) thead th { position:sticky;z-index:2;top:0;white-space:nowrap; }
   :is(.customer-register,.invoice-register,.payment-register) tbody { display:table-row-group;width:auto; }
   :is(.customer-register,.invoice-register,.payment-register) tbody tr { display:table-row;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;content-visibility:auto;contain-intrinsic-size:54px; }
-  :is(.customer-register,.invoice-register,.payment-register) tbody td { display:table-cell;min-width:0;padding:11px 16px;border-top:1px solid rgb(213 217 225 / .75);text-align:left;white-space:nowrap;overflow-wrap:normal; }
+  :is(.customer-register,.invoice-register,.payment-register) tbody td { display:table-cell;min-width:0;padding:9px 10px;border-top:1px solid rgb(213 217 225 / .75);text-align:left;white-space:nowrap;overflow-wrap:normal; }
   :is(.customer-register,.invoice-register,.payment-register) tbody td::before { display:none; }
-  :is(.customer-register,.invoice-register,.payment-register) tbody td[data-label='Actions'] { margin:0;padding:11px 16px;border-top:1px solid rgb(213 217 225 / .75); }
-  :is(.customer-register,.invoice-register,.payment-register) .action-row { width:auto;flex-wrap:nowrap;justify-content:flex-end;gap:8px; }
+  :is(.customer-register,.invoice-register,.payment-register) :is(thead th:last-child,tbody td[data-label='Actions']) { position:sticky;right:0;border-left:1px solid var(--border);background:var(--card);box-shadow:-8px 0 12px -12px rgb(15 23 42 / .7); }
+  :is(.customer-register,.invoice-register,.payment-register) thead th:last-child { z-index:4;background:var(--secondary); }
+  :is(.customer-register,.invoice-register,.payment-register) tbody td[data-label='Actions'] { z-index:3;margin:0;padding:9px 10px;border-top:1px solid rgb(213 217 225 / .75); }
+  :is(.customer-register,.invoice-register,.payment-register) tbody tr:hover td[data-label='Actions'] { background:var(--primary-soft); }
+  :is(.customer-register,.invoice-register,.payment-register) .action-row { width:auto;flex-wrap:nowrap;justify-content:flex-end;gap:4px; }
   :is(.customer-register,.invoice-register,.payment-register) .action-row .icon-button { width:44px;height:44px; }
+  .customer-register :is(thead th:nth-child(1),tbody td:nth-child(1)) { width:44px; }
+  .customer-register :is(thead th:nth-child(2),tbody td:nth-child(2)) { width:50px; }
+  .customer-register :is(thead th:nth-child(3),tbody td:nth-child(3)) { width:155px; }
+  .customer-register :is(thead th:nth-child(4),tbody td:nth-child(4)) { width:72px; }
+  .customer-register :is(thead th:nth-child(5),tbody td:nth-child(5)) { width:84px; }
+  .customer-register :is(thead th:nth-child(6),tbody td:nth-child(6)) { width:150px; }
+  .customer-register :is(thead th:nth-child(7),tbody td:nth-child(7)) { width:100px; }
+  .customer-register :is(thead th:last-child,tbody td[data-label='Actions']) { width:148px;min-width:148px; }
+  .customer-register tbody td:not([data-label='Actions']) { white-space:normal;overflow-wrap:anywhere; }
+  .customer-register tbody td[data-label='Actions'] { padding-right:4px;padding-left:4px; }
+  .customer-register .customer-actions { display:grid;grid-template-columns:repeat(3,44px);justify-content:center; }
+  :is(.invoice-register,.payment-register) :is(thead th:last-child,tbody td[data-label='Actions']) { min-width:108px; }
   .customer-register .status-toggle { min-height:44px; }
 }
 
