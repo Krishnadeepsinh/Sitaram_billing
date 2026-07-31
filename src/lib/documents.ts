@@ -88,10 +88,10 @@ function truncateText(value: string, maxWidth: number, size: number, latin: Embe
   if (mixedTextWidth(value, size, latin, gujarati) <= maxWidth) return value
   let result = ''
   for (const character of value) {
-    if (mixedTextWidth(`${result}${character}...`, size, latin, gujarati) > maxWidth) break
+    if (mixedTextWidth(`${result}${character}…`, size, latin, gujarati) > maxWidth) break
     result += character
   }
-  return `${result}...`
+  return `${result}…`
 }
 
 function wrapText(value: string, maxWidth: number, size: number, latin: EmbeddedFont, gujarati: Font) {

@@ -649,6 +649,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
           <label>
             Status
             <select
+              name="invoiceStatus"
               value={filters.status}
               onChange={(event) =>
                 setFilters((current) => ({
@@ -666,6 +667,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
           <label>
             Invoice type
             <select
+              name="invoiceBillingMode"
               value={filters.billingMode}
               onChange={(event) =>
                 setFilters((current) => ({
@@ -682,6 +684,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
           <label>
             Area
             <select
+              name="invoiceArea"
               value={filters.areaId}
               onChange={(event) =>
                 setFilters((current) => ({
@@ -701,6 +704,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
           <label>
             Service from
             <input
+              name="invoiceFrom"
               type="date"
               value={filters.from}
               max={filters.to || undefined}
@@ -715,6 +719,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
           <label>
             Service to
             <input
+              name="invoiceTo"
               type="date"
               value={filters.to}
               min={filters.from || undefined}
@@ -2031,15 +2036,17 @@ export function ReportsPage({ serviceType }: { serviceType: ServiceType }) {
         subtitle="Filter collections and expenses, inspect ledgers, and export a complete audit view."
       />
       <div className="panel report-toolbar">
-        <div className="service-tabs">
+        <div className="service-tabs" role="group" aria-label="Report scope">
           <button
             className={scope === serviceType ? "active" : ""}
+            aria-pressed={scope === serviceType}
             onClick={() => setScope(serviceType)}
           >
             {serviceType}
           </button>
           <button
             className={scope === "all" ? "active" : ""}
+            aria-pressed={scope === "all"}
             onClick={() => setScope("all")}
           >
             All business
@@ -2584,7 +2591,7 @@ export function SettingsPage() {
               <p className="eyebrow">Accountability</p>
               <h2>Recent audit activity</h2>
               <p className="form-help">Corrections, deletions, payments, and billing changes are retained here.</p>
-              {auditLoading ? <p className="empty-inline">Loading audit history…</p> : auditEvents.length ? <div className="audit-list" role="list">{auditEvents.map((event) => <div className="audit-row" role="listitem" key={event.id}><span><strong>{event.action.replaceAll('_', ' ')}</strong><small>{event.entityType} #{event.entityId}{event.reason ? ` · ${event.reason}` : ''}</small></span><time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time></div>)}</div> : <p className="empty-inline">No audit activity yet.</p>}
+              {auditLoading ? <p className="empty-inline" role="status">Loading audit history…</p> : auditEvents.length ? <div className="audit-list" role="list">{auditEvents.map((event) => <div className="audit-row" role="listitem" key={event.id}><span><strong>{event.action.replaceAll('_', ' ')}</strong><small>{event.entityType} #{event.entityId}{event.reason ? ` · ${event.reason}` : ''}</small></span><time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time></div>)}</div> : <p className="empty-inline" role="status">No audit activity yet.</p>}
             </div>
           </article>
         </div>
@@ -2901,7 +2908,7 @@ function ErrorNotice({ message }: { message: string }) {
 }
 function Empty({ message }: { message: string }) {
   return (
-    <div className="empty-list">
+    <div className="empty-list" role="status">
       <ReceiptText size={30} />
       <p>{message}</p>
     </div>

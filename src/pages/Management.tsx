@@ -200,7 +200,7 @@ export function PlansPage({ serviceType }: { serviceType: ServiceType }) {
           <span>{plans.length} total</span>
         </div>
         {loading ? (
-          <p className="empty-inline">Loading plans…</p>
+          <p className="empty-inline" role="status">Loading plans…</p>
         ) : plans.length ? (
           <div className="table-wrap">
             <table>
@@ -887,6 +887,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
         <div className="customer-filter-grid">
           <label className="due-toggle">
             <input
+              name="subscriberDueOnly"
               type="checkbox"
               checked={dueOnly}
               onChange={(event) => setDueOnly(event.target.checked)}
@@ -896,6 +897,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           <label>
             <span className="sr-only">Status</span>
             <select
+              name="subscriberStatus"
               value={statusFilter}
               onChange={(event) =>
                 setStatusFilter(event.target.value as typeof statusFilter)
@@ -909,6 +911,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           <label>
             <span className="sr-only">Area</span>
             <select
+              name="subscriberArea"
               value={areaFilter}
               onChange={(event) => setAreaFilter(event.target.value)}
             >
@@ -923,6 +926,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           <label>
             <span className="sr-only">Plan</span>
             <select
+              name="subscriberPlan"
               value={planFilter}
               onChange={(event) => setPlanFilter(event.target.value)}
             >
@@ -947,7 +951,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           </span>
         </div>
         {loading ? (
-          <p className="empty-inline">Loading subscribers…</p>
+          <p className="empty-inline" role="status">Loading subscribers…</p>
         ) : filteredCustomers.length ? (
           <div className="table-wrap">
             <table>
@@ -1603,7 +1607,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 <strong>{accountHistory.length} entries</strong>
               </div>
               {summaryLoading ? (
-                <p className="empty-inline">Loading history…</p>
+                <p className="empty-inline" role="status">Loading history…</p>
               ) : accountHistory.length ? (
                 <div className="history-ledger" role="list" aria-label="Account transactions, newest first">
                   {accountHistory.map((entry) =>
@@ -1652,7 +1656,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                   )}
                 </div>
               ) : (
-                <p className="empty-inline">No invoices or payments recorded.</p>
+                <p className="empty-inline" role="status">No invoices or payments recorded.</p>
               )}
             </div>
             <div className="modal-actions">
@@ -1908,7 +1912,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 placeholder="Add a note only if useful"
               />
             </label>
-            {archivedLoading ? <p className="empty-inline">Loading archived subscribers…</p> : archivedCustomers.length ? (
+            {archivedLoading ? <p className="empty-inline" role="status">Loading archived subscribers…</p> : archivedCustomers.length ? (
               archivedCustomers.map((customer) => (
                 <article className="archived-customer-card" key={customer.id}>
                   <div className="archived-customer-heading">
@@ -1964,7 +1968,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
             </div>
             <p><strong>{permanentlyDeleting.name}</strong> ({permanentlyDeleting.customerCode})</p>
             <label>Deletion note (optional)<textarea value={permanentDeleteReason} onChange={(event) => setPermanentDeleteReason(event.target.value)} maxLength={250} placeholder="Why is this archived test record being removed?" /></label>
-            <div className="modal-actions"><button className="secondary" onClick={() => setPermanentlyDeleting(undefined)}>Cancel</button><button className="danger-button" disabled={submitting} onClick={() => void permanentlyDeleteArchived()}><Trash2 size={15} aria-hidden="true" /> {submitting ? "Deleting..." : "Permanently Delete"}</button></div>
+            <div className="modal-actions"><button className="secondary" onClick={() => setPermanentlyDeleting(undefined)}>Cancel</button><button className="danger-button" disabled={submitting} onClick={() => void permanentlyDeleteArchived()}><Trash2 size={15} aria-hidden="true" /> {submitting ? "Deleting…" : "Permanently Delete"}</button></div>
           </div>
         </Modal>
       )}
@@ -2099,7 +2103,7 @@ function PageTitle({
 }
 function Empty({ label, text }: { label: string; text: string }) {
   return (
-    <div className="empty-list">
+    <div className="empty-list" role="status">
       <Users size={28} />
       <p>{label}</p>
       <small>{text}</small>
