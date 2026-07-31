@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -2707,6 +2708,7 @@ function Modal({
   children: ReactNode;
 }) {
   const dialog = useRef<HTMLElement>(null);
+  const titleId = useId();
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     dialog.current
@@ -2751,17 +2753,17 @@ function Modal({
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
+        aria-labelledby={titleId}
         onKeyDown={handleKey}
       >
         <div className="panel-heading">
-          <h2 id="modal-title">{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <button
             className="icon-button"
             aria-label="Close dialog"
             onClick={onClose}
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
         {children}

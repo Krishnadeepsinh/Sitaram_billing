@@ -823,6 +823,7 @@ button:not(:disabled),a,.nav-item { cursor:pointer; }
 }
 @media(prefers-reduced-motion:reduce) {
   .page-content,.modal,.modal-backdrop,.sidebar-open,.skeleton-line,.skeleton-panel { animation:none!important; }
+  .loading-track i { width:100%;animation:none!important; }
 }
 .customer-register .entity-cell strong { font-size:14px; }
 @media(max-width:900px){ .dashboard-page .dashboard-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .dashboard-page .dashboard-toolbar { align-items:stretch; } .dashboard-page .dashboard-range { flex-wrap:wrap; } .dashboard-page .dashboard-range label { min-width:0; flex:1; } }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   Archive,
@@ -2026,36 +2026,36 @@ function Modal({
   children: ReactNode;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
+  const titleId = useId();
+  const focusable = () =>
+    Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href]",
+      ) ?? [],
+    );
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null;
-    const focusable = () =>
-      Array.from(
-        dialogRef.current?.querySelectorAll<HTMLElement>(
-          "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href]",
-        ) ?? [],
-      );
     focusable()[0]?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-      if (event.key !== "Tab") return;
-      const elements = focusable();
-      const first = elements[0];
-      const last = elements.at(-1);
-      if (!first || !last) return;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus();
-    };
-  }, [onClose]);
+    return () => previousFocus?.focus();
+  }, []);
+  function handleKey(event: React.KeyboardEvent) {
+    if (event.key === "Escape") {
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const elements = focusable();
+    const first = elements[0];
+    const last = elements.at(-1);
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
   return (
     <div
       className="modal-backdrop"
@@ -2069,16 +2069,17 @@ function Modal({
         className={`${wide ? "modal modal-wide" : "modal"}${compact ? " modal-compact" : ""}`}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="management-modal-title"
+        aria-labelledby={titleId}
+        onKeyDown={handleKey}
       >
         <div className="modal-heading">
-          <h2 id="management-modal-title">{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <button
             className="icon-button"
             aria-label="Close dialog"
             onClick={onClose}
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
         {children}
