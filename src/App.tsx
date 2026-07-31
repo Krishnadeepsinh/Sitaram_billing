@@ -42,6 +42,7 @@ function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('sitaram-theme') === 'dark' ? 'dark' : 'light')
   const [page, setPage] = useState<Page>(pageFromHash)
   const [dbState, setDbState] = useState<{ status: 'ok' | 'unavailable'; storage: 'local' | 'cloud' | 'unknown' }>({ status: 'unavailable', storage: 'unknown' })
+  const sidebar = useRef<HTMLElement>(null)
 
   useEffect(() => {
     void preloadPage(pageFromHash())
@@ -54,6 +55,24 @@ function App() {
   useEffect(() => { localStorage.setItem('sitaram-service', service); if (new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('service') !== service) history.replaceState(null, '', pageHref(page, service)) }, [page, service])
   useEffect(() => { const unauthorized = () => setUsername(null); window.addEventListener('sitaram:unauthorized', unauthorized); return () => window.removeEventListener('sitaram:unauthorized', unauthorized) }, [])
   useEffect(() => { localStorage.setItem('sitaram-sidebar', sidebarCollapsed ? 'collapsed' : 'expanded') }, [sidebarCollapsed])
+  useEffect(() => {
+    if (!menuOpen) return
+    const previous = document.activeElement as HTMLElement | null
+    const focusable = () => [...(sidebar.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href]') ?? [])]
+    const items = focusable()
+    ;(items.find((item) => item.classList.contains('nav-item')) ?? items[0])?.focus()
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return
+      const currentItems = focusable()
+      const first = currentItems[0]
+      const last = currentItems.at(-1)
+      if (!first || !last) return
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    document.addEventListener('keydown', trapFocus)
+    return () => { document.removeEventListener('keydown', trapFocus); previous?.focus() }
+  }, [menuOpen])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); if (!document.querySelector('[aria-modal="true"]')) setCommandOpen((open) => !open) }
@@ -73,7 +92,7 @@ function App() {
   return <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
     <a className="skip-link" href="#main-content">Skip to content</a>
     {menuOpen ? <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} /> : null}
-    <aside className={menuOpen ? 'sidebar sidebar-open' : 'sidebar'}>
+    <aside ref={sidebar} className={menuOpen ? 'sidebar sidebar-open' : 'sidebar'}>
       <div className="sidebar-header">
         <div className="brand"><span className="brand-logo"><img src="/logo.png" width="32" height="32" alt="Sitaram Cable & Broadband" /></span><span className="brand-copy">SITARAM <small>Cable & Broadband</small></span></div>
         <button className="service-mode" aria-label={`Switch to ${service === 'cable' ? 'Broadband' : 'Cable'} mode`} onClick={() => { const next = service === 'cable' ? 'broadband' : 'cable'; setService(next); history.replaceState(null, '', pageHref(page, next)) }} title={`${serviceName} workspace`}><span><i className={service} /> <b>{serviceName.toUpperCase()}</b></span><ArrowRightLeft size={14} aria-hidden="true" /></button>
@@ -97,7 +116,7 @@ function CommandPalette({ page, onNavigate, onClose }: { page: Page; onNavigate:
   const [query, setQuery] = useState('')
   const dialog = useRef<HTMLElement>(null); const input = useRef<HTMLInputElement>(null)
   const results = useMemo(() => navigation.filter(([label]) => label.toLowerCase().includes(query.trim().toLowerCase())), [query])
-  useEffect(() => { const previous = document.activeElement as HTMLElement | null; if (matchMedia('(min-width: 621px)').matches) input.current?.focus(); return () => previous?.focus() }, [])
+  useEffect(() => { const previous = document.activeElement as HTMLElement | null; input.current?.focus(); return () => previous?.focus() }, [])
   function handleKey(event: React.KeyboardEvent) { if (event.key === 'Escape') return onClose(); if (event.key !== 'Tab') return; const items = [...(dialog.current?.querySelectorAll<HTMLElement>('button, input, [tabindex]:not([tabindex="-1"])') ?? [])].filter((item) => !item.hasAttribute('disabled')); const first = items[0]; const last = items.at(-1); if (!first || !last) return; if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() } }
   return <div className="command-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section ref={dialog} className="command-dialog" role="dialog" aria-modal="true" aria-labelledby="command-title" onKeyDown={handleKey}><div className="command-search"><Search size={19} aria-hidden="true" /><label className="sr-only" htmlFor="command-input" id="command-title">Go to a workspace page</label><input ref={input} id="command-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a page…" autoComplete="off" /><button onClick={onClose} aria-label="Close page finder"><X size={17} /></button></div><div className="command-results"><p>Navigate</p>{results.map(([label, Icon]) => <button className={page === label ? 'selected' : ''} key={label} onClick={() => onNavigate(label)}><span><Icon size={17} /><span><strong>{label}</strong><small>Open {label.toLowerCase()} workspace</small></span></span><kbd>Enter</kbd></button>)}{results.length === 0 ? <div className="command-empty"><Search size={24} /><span>No matching pages</span></div> : null}</div><footer><span><kbd>Tab</kbd> Navigate</span><span><kbd>Esc</kbd> Close</span></footer></section></div>
 }

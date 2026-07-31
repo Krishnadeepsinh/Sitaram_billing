@@ -2704,7 +2704,7 @@ function Modal({
     const previous = document.activeElement as HTMLElement | null;
     dialog.current
       ?.querySelector<HTMLElement>(
-        'button, input, select, [tabindex]:not([tabindex="-1"])',
+        'button, input, select, textarea, iframe, [tabindex]:not([tabindex="-1"])',
       )
       ?.focus();
     return () => previous?.focus();
@@ -2717,7 +2717,7 @@ function Modal({
     if (event.key !== "Tab") return;
     const items = [
       ...(dialog.current?.querySelectorAll<HTMLElement>(
-        'button, input, select, a[href], [tabindex]:not([tabindex="-1"])',
+        'button, input, select, textarea, iframe, a[href], [tabindex]:not([tabindex="-1"])',
       ) ?? []),
     ].filter((item) => !item.hasAttribute("disabled"));
     if (!items.length) return;
