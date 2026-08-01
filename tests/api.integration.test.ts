@@ -168,7 +168,7 @@ describe('financial API flow', () => {
     const blockedNormalBackdate = new ResponseMock()
     await invoiceHandler(request('POST', cookie, { serviceType: 'cable', customerId, monthsBilled: 1, expectedPeriodStart: nextAfterLaterPeriod, periodStart: missedPeriodStart }), blockedNormalBackdate as unknown as VercelResponse)
     expect(blockedNormalBackdate.statusCode).toBe(409)
-    expect(blockedNormalBackdate.body).toEqual({ error: expect.stringContaining('Use Missed Previous Period') })
+    expect(blockedNormalBackdate.body).toEqual({ error: expect.stringContaining('Use Bill Missed Dates') })
 
     const preview = new ResponseMock()
     await invoiceHandler(request('GET', cookie, undefined, { serviceType: 'cable', previewCustomerId: String(customerId), monthsBilled: '1', periodStart: missedPeriodStart, billingMode: 'historical' }), preview as unknown as VercelResponse)
@@ -196,6 +196,120 @@ describe('financial API flow', () => {
     await invoiceHandler(request('POST', cookie, { ...missedInvoiceBody, periodStart: addBillingDays(missedPeriodStart, 1), historicalReason: 'Attempted duplicate missed period' }), overlap as unknown as VercelResponse)
     expect(overlap.statusCode).toBe(409)
     expect(overlap.body).toEqual({ error: expect.stringContaining('already covers') })
+  })
+
+  it('keeps renewals continuous after billing starts', async () => {
+    const installationDate = todayInBusinessTimezone()
+    const created = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Continuous Renewal', areaId: 1, planId: 1, installationDate, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
+    const customerId = Number((created.body as { id: number }).id)
+    await invoiceHandler(await invoiceRequest(cookie, customerId), new ResponseMock() as unknown as VercelResponse)
+    const nextStart = addBillingDays(installationDate, 30)
+    const skippedStart = addBillingDays(nextStart, 30)
+    const skipped = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, { serviceType: 'cable', customerId, monthsBilled: 1, expectedPeriodStart: nextStart, periodStart: skippedStart }), skipped as unknown as VercelResponse)
+    expect(skipped.statusCode).toBe(409)
+    expect(skipped.body).toEqual({ error: expect.stringContaining('no service dates are skipped') })
+    expect(Number((await database().execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ? AND is_deleted = 0', args: [customerId] })).rows[0].count)).toBe(1)
+    expect((await database().execute({ sql: 'SELECT next_billing_start_date AS nextStart FROM customers WHERE id = ?', args: [customerId] })).rows[0].nextStart).toBe(nextStart)
+  })
+
+  it('rejects an entire multi-cycle invoice when any paid or unpaid period is already billed', async () => {
+    const installationDate = addBillingDays(todayInBusinessTimezone(), -120)
+    const created = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Atomic Overlap Check', areaId: 1, planId: 1, installationDate, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
+    const customerId = Number((created.body as { id: number }).id)
+    await database().execute({ sql: 'UPDATE customers SET next_billing_start_date = ? WHERE id = ?', args: [installationDate, customerId] })
+    await invoiceHandler(await invoiceRequest(cookie, customerId), new ResponseMock() as unknown as VercelResponse)
+    await invoiceHandler(await invoiceRequest(cookie, customerId), new ResponseMock() as unknown as VercelResponse)
+    await paymentHandler(request('POST', cookie, { serviceType: 'cable', customerId, paymentDate: todayInBusinessTimezone(), amountReceivedPaise: 10000, discountGivenPaise: 0, paymentMode: 'cash', requestKey: 'atomic-overlap-payment' }), new ResponseMock() as unknown as VercelResponse)
+    const nextStart = addBillingDays(installationDate, 60)
+    for (const [periodStart, expectedStatus] of [[installationDate, 'paid'], [addBillingDays(installationDate, 30), 'unpaid']] as const) {
+      const blocked = new ResponseMock()
+      await invoiceHandler(request('POST', cookie, { serviceType: 'cable', customerId, monthsBilled: 2, expectedPeriodStart: nextStart, periodStart, billingMode: 'historical', historicalReason: 'QA verifies all-or-nothing overlap handling' }), blocked as unknown as VercelResponse)
+      expect(blocked.statusCode).toBe(409)
+      expect(blocked.body).toEqual({ error: expect.stringContaining(`(${expectedStatus}) already covers`) })
+      expect((blocked.body as { error: string }).error).toContain('No invoice was created')
+    }
+    expect(Number((await database().execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ? AND is_deleted = 0', args: [customerId] })).rows[0].count)).toBe(2)
+    expect((await database().execute({ sql: 'SELECT next_billing_start_date AS nextStart FROM customers WHERE id = ?', args: [customerId] })).rows[0].nextStart).toBe(nextStart)
+  })
+
+  it('reports exact legacy gaps and deactivates service automatically after coverage ends', async () => {
+    const today = todayInBusinessTimezone()
+    const expiredInstallation = addBillingDays(today, -30)
+    const expired = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Recharge Due Service', areaId: 1, planId: 1, installationDate: expiredInstallation, openingBalancePaise: 0, openingBalanceType: 'due' }), expired as unknown as VercelResponse)
+    const expiredId = Number((expired.body as { id: number }).id)
+    const expiredCode = String((expired.body as { customerCode: string }).customerCode)
+    await database().execute({ sql: 'UPDATE customers SET next_billing_start_date = ? WHERE id = ?', args: [expiredInstallation, expiredId] })
+    await invoiceHandler(await invoiceRequest(cookie, expiredId), new ResponseMock() as unknown as VercelResponse)
+    const expiredList = new ResponseMock()
+    await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', query: expiredCode }), expiredList as unknown as VercelResponse)
+    expect((expiredList.body as { items: unknown[] }).items).toEqual([expect.objectContaining({ status: 'active', coverageStatus: 'expired', serviceStatus: 'recharge_due' })])
+
+    const legacyInstallation = addBillingDays(today, -31)
+    const legacy = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Legacy Gap Dates', areaId: 1, planId: 1, installationDate: legacyInstallation, openingBalancePaise: 0, openingBalanceType: 'due' }), legacy as unknown as VercelResponse)
+    const legacyId = Number((legacy.body as { id: number }).id)
+    const legacyCode = String((legacy.body as { customerCode: string }).customerCode)
+    await database().execute({ sql: 'UPDATE customers SET next_billing_start_date = ? WHERE id = ?', args: [legacyInstallation, legacyId] })
+    await invoiceHandler(await invoiceRequest(cookie, legacyId), new ResponseMock() as unknown as VercelResponse)
+    const futureStart = addBillingDays(today, 31)
+    await database().execute({ sql: 'UPDATE customers SET next_billing_start_date = ? WHERE id = ?', args: [futureStart, legacyId] })
+    await invoiceHandler(await invoiceRequest(cookie, legacyId), new ResponseMock() as unknown as VercelResponse)
+    const legacyList = new ResponseMock()
+    await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', query: legacyCode }), legacyList as unknown as VercelResponse)
+    expect((legacyList.body as { items: unknown[] }).items).toEqual([expect.objectContaining({
+      coverageStatus: 'future', serviceStatus: 'scheduled', hasHistoricalGap: 1,
+      historicalGapStart: addBillingDays(today, -1), historicalGapEnd: addBillingDays(today, 30), historicalGapDays: 32,
+    })])
+  })
+
+  it('restarts expired service today without billing the inactive gap', async () => {
+    const today = todayInBusinessTimezone()
+    const installationDate = addBillingDays(today, -90)
+    const created = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Paused Then Restarted', areaId: 1, planId: 1, installationDate, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
+    const customerId = Number((created.body as { id: number }).id)
+    await database().execute({ sql: 'UPDATE customers SET next_billing_start_date = ? WHERE id = ?', args: [installationDate, customerId] })
+    await invoiceHandler(await invoiceRequest(cookie, customerId), new ResponseMock() as unknown as VercelResponse)
+
+    const restartBody = { serviceType: 'cable', customerId, monthsBilled: 1, expectedPeriodStart: today, periodStart: today, billingMode: 'normal', restartService: true }
+    const restarted = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, restartBody), restarted as unknown as VercelResponse)
+    expect(restarted.statusCode).toBe(201)
+    expect(restarted.body).toMatchObject({ periodStart: today, periodEnd: addBillingDays(today, 29), replayed: false })
+    expect((await database().execute({ sql: 'SELECT next_billing_start_date AS nextStart FROM customers WHERE id = ?', args: [customerId] })).rows[0].nextStart).toBe(addBillingDays(today, 30))
+    expect((await database().execute({ sql: 'SELECT status, effective_date AS effectiveDate FROM customer_status_history WHERE customer_id = ? ORDER BY effective_date DESC, id DESC LIMIT 2', args: [customerId] })).rows).toEqual([
+      expect.objectContaining({ status: 'active', effectiveDate: today }),
+      expect.objectContaining({ status: 'inactive', effectiveDate: addBillingDays(installationDate, 30) }),
+    ])
+    const restartedList = new ResponseMock()
+    await customerHandler(request('GET', cookie, undefined, { serviceType: 'cable', query: 'Paused Then Restarted' }), restartedList as unknown as VercelResponse)
+    expect((restartedList.body as { items: unknown[] }).items).toEqual([
+      expect.objectContaining({ coverageStatus: 'active', serviceStatus: 'active', hasHistoricalGap: 0 }),
+    ])
+
+    const retry = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, restartBody), retry as unknown as VercelResponse)
+    expect(retry.statusCode).toBe(200)
+    expect(retry.body).toMatchObject({ periodStart: today, replayed: true })
+  })
+
+  it('previews bulk billing without creating financial records', async () => {
+    const today = todayInBusinessTimezone()
+    const created = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Bulk Preview Customer', areaId: 1, planId: 1, installationDate: today, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
+    const customerId = Number((created.body as { id: number }).id)
+    const throughMonth = addBillingDays(today, 60).slice(0, 7)
+    const before = Number((await database().execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].count)
+
+    const preview = new ResponseMock()
+    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, customerIds: [customerId], preview: true }), preview as unknown as VercelResponse)
+    expect(preview.statusCode).toBe(200)
+    expect(preview.body).toEqual(expect.objectContaining({ generated: [], ready: [expect.objectContaining({ customerId, customerName: 'Bulk Preview Customer', periodStart: today, cycles: expect.any(Number), amountPaise: expect.any(Number) })], failed: [] }))
+    expect(Number((await database().execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].count)).toBe(before)
   })
 
   it('rejects missed periods before installation or whose full cycle has not ended', async () => {
@@ -476,7 +590,7 @@ describe('financial API flow', () => {
 
     const report = new ResponseMock()
     await reportHandler(request('GET', cookie, undefined, { serviceType: 'cable', from: '2026-07-01', to: '2026-07-31', areaId: String(areaId), paymentMode: 'cash' }), report as unknown as VercelResponse)
-    expect(report.body).toEqual(expect.objectContaining({ collectedPaise: 4000, activeSubscribers: 1, dataQualityCount: 0 }))
+    expect(report.body).toEqual(expect.objectContaining({ collectedPaise: 4000, activeSubscribers: 0, dataQualityCount: 0 }))
     expect((report.body as { payments: unknown[] }).payments).toHaveLength(1)
     expect((report.body as { trends: Array<{ month: string; collectedPaise: number }> }).trends).toContainEqual(expect.objectContaining({ month: '2026-07', collectedPaise: 4000 }))
 

@@ -14,7 +14,7 @@ import { recomputeBillingPosition } from '../lib/coverage.js'
 const inputSchema = z.object({
   serviceType: serviceTypeSchema, customerId: z.number().int().positive(), monthsBilled: z.number().int().min(1).max(24),
   expectedPeriodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), issuedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  billingMode: z.enum(['normal', 'historical']).default('normal'), historicalReason: z.string().trim().max(250).optional(),
+  billingMode: z.enum(['normal', 'historical']).default('normal'), historicalReason: z.string().trim().max(250).optional(), restartService: z.boolean().optional(),
 })
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
@@ -46,7 +46,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
             ) WHERE effectiveDate <= ? ORDER BY effectiveDate DESC, createdAt DESC LIMIT 1`, args: [customerId, customerId, period.periodStart] })
           planName = historicalPlan.rows[0]?.planName ?? null; pricePaise = historicalPlan.rows[0]?.pricePaise ?? null
         }
-        const conflict = await db.execute({ sql: `SELECT invoice_code AS invoiceCode, period_start AS periodStart, period_end AS periodEnd FROM invoices WHERE customer_id = ? AND is_deleted = 0 AND is_merged = 0 AND period_start <= ? AND period_end >= ? ORDER BY period_start LIMIT 1`, args: [customerId, period.periodEnd, period.periodStart] })
+        const conflict = await db.execute({ sql: `SELECT invoice_code AS invoiceCode, period_start AS periodStart, period_end AS periodEnd, status FROM invoices WHERE customer_id = ? AND is_deleted = 0 AND is_merged = 0 AND period_start <= ? AND period_end >= ? ORDER BY period_start LIMIT 1`, args: [customerId, period.periodEnd, period.periodStart] })
         const currentChargePaise = Number(pricePaise ?? 0) * monthsBilled
         const openingDuePaise = Number(customer.rows[0].invoiceCount) === 0 && customer.rows[0].openingBalanceType === 'due' ? Number(customer.rows[0].openingBalancePaise) : 0
         const previousDuePaise = Number(customer.rows[0].outstandingDuePaise) + openingDuePaise

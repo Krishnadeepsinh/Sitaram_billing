@@ -8,6 +8,7 @@ import type { FormEvent, ReactNode } from "react";
 import {
   Banknote,
   CalendarDays,
+  CheckCircle2,
   Download,
   Eye,
   FilePlus2,
@@ -62,10 +63,12 @@ import type {
   PaymentDeletePreview,
   PaymentDetail,
   AuditEvent,
+  BulkInvoiceResult,
   Report,
   ServiceType,
 } from "../lib/api";
 import {
+  addBillingDays,
   billingCyclePosition,
   endOfCalendarMonth,
   formatBusinessDate,
@@ -101,9 +104,11 @@ export function DashboardPage({
   serviceType: ServiceType;
   onNavigate: (
     page: "Subscribers" | "Invoices" | "Payments" | "Reports",
+    params?: Record<string, string>,
   ) => void;
 }) {
   const [report, setReport] = useState<Report>();
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [areas, setAreas] = useState<
     Array<{ id: number; displayName: string }>
   >([]);
@@ -115,25 +120,39 @@ export function DashboardPage({
   useEffect(() => {
     setReport(undefined);
     setError("");
-    Promise.all([getReport(serviceType, range), listAreas(serviceType)])
-      .then(([nextReport, nextAreas]) => {
+    Promise.all([getReport(serviceType, range), listAreas(serviceType), listCustomers(serviceType, "", false, { limit: 500 })])
+      .then(([nextReport, nextAreas, nextCustomers]) => {
         setReport(nextReport);
         setAreas(nextAreas);
+        setCustomers(nextCustomers.items);
       })
       .catch((cause: Error) => setError(cause.message));
   }, [range, serviceType]);
+  const today = todayInBusinessTimezone();
+  const scopedCustomers = range.areaId ? customers.filter((customer) => customer.areaId === Number(range.areaId)) : customers;
+  const rechargeDueCount = scopedCustomers.filter((customer) => customer.serviceStatus === "recharge_due").length;
+  const paymentDueCount = scopedCustomers.filter((customer) => customer.amountDuePaise - customer.creditBalancePaise > 0).length;
+  const setupCount = scopedCustomers.filter((customer) => !customer.planId || !customer.planIsActive || !customer.installationDate || !customer.nextBillingStartDate).length;
+  const attentionItems = scopedCustomers.flatMap((customer) => {
+    if (!customer.planId || !customer.planIsActive || !customer.installationDate || !customer.nextBillingStartDate) return [{ customer, action: "setup", actionLabel: "Complete Setup", reason: !customer.planId ? "Plan missing" : !customer.installationDate ? "Installation date missing" : "Billing setup incomplete", priority: 1 }];
+    if (customer.serviceStatus === "recharge_due") return [{ customer, action: "recharge", actionLabel: "Recharge", reason: customer.latestPeriodEnd ? `Service inactive since ${formatBusinessDate(addBillingDays(customer.latestPeriodEnd, 1))}` : "Service not started", priority: 2 }];
+    const balance = customer.amountDuePaise - customer.creditBalancePaise;
+    if (balance > 0) return [{ customer, action: "payment", actionLabel: "Record Payment", reason: `${formatRupees(balance)} unpaid`, priority: 3 }];
+    if (customer.latestPeriodEnd && customer.latestPeriodEnd <= addBillingDays(today, 3)) return [{ customer, action: "recharge", actionLabel: "Add Recharge", reason: `Active until ${formatBusinessDate(customer.latestPeriodEnd)}`, priority: 4 }];
+    return [];
+  }).sort((left, right) => left.priority - right.priority || left.customer.name.localeCompare(right.customer.name)).slice(0, 12);
   if (error) return <ErrorNotice message={error} />;
   if (!report) return <Loading label="Loading dashboard…" />;
   return (
     <section className="page-content dashboard-page">
-      <h1 className="sr-only">Dashboard</h1>
+      <h1 className="sr-only">Today</h1>
       <section className="dashboard-toolbar">
         <div>
-          <p className="eyebrow">Live billing control</p>
-          <h2>Dashboard</h2>
+          <p className="eyebrow">Daily work</p>
+          <h2>Today</h2>
           <p className="dashboard-period">{formatBusinessDate(range.from)} → {formatBusinessDate(range.to)}</p>
           <div className="dashboard-context" aria-label="Workspace status">
-            <span><strong>{report.activeSubscribers}</strong> active subscribers</span>
+            <span><strong>{report.activeSubscribers}</strong> services active today</span>
             <span className={report.dataQualityCount ? "needs-attention" : "ready"}>
               {report.dataQualityCount
                 ? `${report.dataQualityCount} need billing setup`
@@ -190,9 +209,14 @@ export function DashboardPage({
             </select>
           </label>
           <button className="primary" onClick={() => onNavigate("Invoices")}>
-            <FilePlus2 size={17} aria-hidden="true" /> New invoice
+            <FilePlus2 size={17} aria-hidden="true" /> Add Recharge
           </button>
         </div>
+      </section>
+      <section className="panel today-action-centre" aria-labelledby="today-work-title">
+        <div className="panel-heading today-action-heading"><div><p className="eyebrow">Start here</p><h2 id="today-work-title">Work to Do</h2><small>Each customer shows the most important next action.</small></div><div className="attention-counts" aria-label="Work counts"><span><strong>{rechargeDueCount}</strong> Recharge Due</span><span><strong>{paymentDueCount}</strong> Payment Due</span><span><strong>{setupCount}</strong> Setup Problems</span></div></div>
+        {attentionItems.length ? <div className="attention-list" role="list">{attentionItems.map(({ customer, action, actionLabel, reason }) => <div role="listitem" key={customer.id}><span className="attention-customer"><strong>{customer.name}</strong><small>{customer.customerCode} · {customer.planName || customer.areaName}</small></span><span className={`attention-state ${action}`}>{reason}</span><button className={action === "recharge" ? "primary" : "secondary"} onClick={() => onNavigate("Subscribers", { query: customer.customerCode, action })}>{actionLabel}</button></div>)}</div> : <div className="today-clear"><CheckCircle2 size={22} aria-hidden="true" /><span><strong>Daily work is clear</strong><small>No recharge, payment, or setup action is waiting.</small></span></div>}
+        {scopedCustomers.length > attentionItems.length && attentionItems.length >= 12 ? <button className="text-button today-view-all" onClick={() => onNavigate("Subscribers")}>View all customers</button> : null}
       </section>
       <section className="metrics dashboard-metrics" aria-label="Business statistics">
         <Metric
@@ -236,15 +260,15 @@ export function DashboardPage({
           <span>
             <UserPlus />
           </span>
-          <strong>Add subscriber</strong>
+          <strong>Add customer</strong>
           <small>Create a customer record</small>
         </button>
         <button onClick={() => onNavigate("Invoices")}>
           <span>
             <FileText />
           </span>
-          <strong>Billing</strong>
-          <small>Generate service invoices</small>
+          <strong>Recharges</strong>
+          <small>Add and review service bills</small>
         </button>
         <button onClick={() => onNavigate("Reports")}>
           <span>
@@ -362,6 +386,8 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
   const [invoiceTotal, setInvoiceTotal] = useState(0);
   const [invoiceOffset, setInvoiceOffset] = useState(0);
   const [bulkSelection, setBulkSelection] = useState<number[]>([]);
+  const [bulkThroughMonth, setBulkThroughMonth] = useState(today.slice(0, 7));
+  const [bulkPreview, setBulkPreview] = useState<BulkInvoiceResult>();
   const [confirming, setConfirming] = useState<Invoice | "merge">();
   const [deleteReason, setDeleteReason] = useState("");
   const [deletePreview, setDeletePreview] = useState<InvoiceDeletePreview>();
@@ -419,19 +445,30 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
 
   async function submitBulk(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
+    if (!bulkSelection.length) return setNotice({ kind: "error", message: "Select at least one customer to review." });
     setSubmitting(true);
     try {
+      if (!bulkPreview) {
+        const preview = await bulkCreateInvoices(serviceType, bulkThroughMonth, bulkSelection, true);
+        setBulkPreview(preview);
+        return;
+      }
       const result = await bulkCreateInvoices(
         serviceType,
-        String(data.get("throughMonth")),
-        bulkSelection.length ? bulkSelection : undefined,
+        bulkThroughMonth,
+        bulkSelection,
       );
       setBillingDialog(undefined);
       setBulkSelection([]);
+      setBulkPreview(undefined);
+      const failedSummary = result.failed.slice(0, 3).map((item) =>
+        `${item.customerName ?? `Subscriber ${item.customerId}`}${item.customerCode ? ` (${item.customerCode})` : ""}: ${item.reason}`,
+      ).join(" ");
       setNotice({
-        kind: "success",
-        message: `${result.generated.length} invoice(s) generated; ${result.skipped.length} customer(s) already covered or without a complete cycle.`,
+        kind: result.failed.length ? "error" : "success",
+        message: result.failed.length
+          ? `${result.generated.length} bill(s) created. ${result.failed.length} customer(s) were not billed. ${failedSummary}${result.failed.length > 3 ? ` ${result.failed.length - 3} more need review.` : ""}`
+          : `${result.generated.length} bill(s) created. ${result.skipped.length} customer(s) had no complete 30-day period to bill.`,
       });
       refresh();
     } catch (error) {
@@ -561,8 +598,8 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
   return (
     <section className="page-content">
       <PageTitle
-        title="Invoices"
-        subtitle="Manage 30-day service coverage, billing, and payment collections."
+        title="Bills"
+        subtitle="Add recharges, review service dates, and track what customers owe."
         action={
           <div className="page-actions invoice-page-actions">
             <button
@@ -576,31 +613,35 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
               className="secondary"
               onClick={() => {
                 setBulkSelection([]);
+                setBulkPreview(undefined);
+                setBulkThroughMonth(today.slice(0, 7));
                 setBillingDialog("bulk");
               }}
             >
-              <Users size={16} /> Bulk Billing
+              <Users size={16} /> Recharge Many
             </button>
             <button
               className="primary"
               disabled={!dueBillable.length || submitting}
               title={
                 dueBillable.length
-                  ? "Generate complete cycles for subscribers due today or earlier"
-                  : "No subscribers are due for billing"
+                  ? "Review complete recharge periods due today or earlier"
+                  : "No customers are due for recharge"
               }
               onClick={() => {
                 setBulkSelection(dueBillable.map((customer) => customer.id));
+                setBulkPreview(undefined);
+                setBulkThroughMonth(today.slice(0, 7));
                 setBillingDialog("due");
               }}
             >
-              <CalendarDays size={16} /> Bill All Due
+              <CalendarDays size={16} /> Review Due Recharges
             </button>
             <button
               className="secondary"
               onClick={() => setBillingDialog("single")}
             >
-              <FilePlus2 size={16} /> New Invoice
+              <FilePlus2 size={16} /> Add Recharge
             </button>
           </div>
         }
@@ -610,7 +651,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">{serviceType} billing</p>
-            <h2>Invoice Register</h2>
+            <h2>Bill History</h2>
           </div>
           {selected.length >= 2 && (
             <button
@@ -630,8 +671,8 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
               autoComplete="off"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search invoice, customer, ID, or STB…"
-              aria-label="Search invoices"
+              placeholder="Search bill, customer, ID, or STB…"
+              aria-label="Search bills"
             />
           </div>
           <label className="check-row">
@@ -664,7 +705,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
             </select>
           </label>
           <label>
-            Invoice type
+            Bill Type
             <select
               name="invoiceBillingMode"
               value={filters.billingMode}
@@ -676,8 +717,8 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
               }
             >
               <option value="">All</option>
-              <option value="normal">Normal renewal</option>
-              <option value="historical">Missed previous period</option>
+              <option value="normal">Service recharge</option>
+              <option value="historical">Older missed bill</option>
             </select>
           </label>
           <label>
@@ -733,7 +774,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
         </div>
         {loading ? (
           <p className="empty-inline" role="status">
-            Loading invoices…
+            Loading bills…
           </p>
         ) : invoices.length ? (
           <>
@@ -744,7 +785,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                     <th>
                       <span className="sr-only">Select</span>
                     </th>
-                    <th>Invoice</th>
+                    <th>Bill</th>
                     <th>Customer</th>
                     <th>Period</th>
                     <th>Balance</th>
@@ -774,7 +815,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                           />
                         ) : null}
                       </td>
-                      <td data-label="Invoice">
+                      <td data-label="Bill">
                         <strong>{invoice.invoiceCode}</strong>
                         <small>
                           Issued {formatBusinessDate(invoice.issuedDate)} · Due{" "}
@@ -892,7 +933,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
       {pdfPreview ? <PdfPreviewModal title={pdfPreview.title} url={pdfPreview.url} onClose={() => { URL.revokeObjectURL(pdfPreview.url); setPdfPreview(undefined); }} /> : null}
       {billingDialog === "single" && (
         <Modal
-          title="Generate Invoice"
+          title="Add Service Recharge"
           onClose={() => setBillingDialog(undefined)}
         >
           <InvoiceForm
@@ -903,7 +944,9 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
               setBillingDialog(undefined);
               setNotice({
                 kind: "success",
-                message: `${result.invoiceCode} ${result.replayed ? "already existed" : "generated"} for ${formatBusinessDate(result.periodStart)} to ${formatBusinessDate(result.periodEnd)}.`,
+                message: result.replayed
+                  ? `${result.invoiceCode} already existed; no duplicate was created.${result.paymentCode ? ` Payment ${result.paymentCode} recorded.` : ""}`
+                  : `Recharge saved through ${formatBusinessDate(result.periodEnd)}. Bill ${result.invoiceCode} created.${result.paymentCode ? ` Payment ${result.paymentCode} recorded.` : ""}`,
               });
               refresh();
             }}
@@ -911,41 +954,39 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
         </Modal>
       )}
       {(billingDialog === "bulk" || billingDialog === "due") && (
-        <Modal
-          title={billingDialog === "due" ? "Generate Due Invoices" : "Bulk Billing"}
-          onClose={() => setBillingDialog(undefined)}
-        >
+        <Modal wide title={billingDialog === "due" ? "Review Due Recharges" : "Recharge Many Customers"} onClose={() => { setBillingDialog(undefined); setBulkPreview(undefined); }}>
           <form className="modal-form single-column" onSubmit={submitBulk}>
             <div className="modal-form-body">
             <label>
-              Bill Complete Cycles Through *
+              Include Complete 30-Day Periods Ending By *
               <input
                 name="throughMonth"
                 type="month"
-                defaultValue={today.slice(0, 7)}
+                autoComplete="off"
+                value={bulkThroughMonth}
+                onChange={(event) => { setBulkThroughMonth(event.target.value); setBulkPreview(undefined); }}
                 required
               />
             </label>
             <fieldset className="bulk-customer-picker">
-              <legend>Customer Scope</legend>
-              <p>
-                {bulkSelection.length
-                  ? `${bulkSelection.length} selected`
-                  : `All ${billable.length} eligible customers`}
-              </p>
+              <legend>Choose Customers</legend>
+              <div className="bulk-picker-heading"><p>{bulkSelection.length ? `${bulkSelection.length} selected` : "No customers selected"}</p><span><button type="button" className="text-button" onClick={() => { setBulkSelection(billable.map((customer) => customer.id)); setBulkPreview(undefined); }}>Select All Listed</button><button type="button" className="text-button" onClick={() => { setBulkSelection([]); setBulkPreview(undefined); }}>Clear</button></span></div>
               <div>
                 {billable.map((customer) => (
                   <label key={customer.id}>
                     <input
+                      name="bulkCustomerIds"
                       type="checkbox"
+                      value={customer.id}
                       checked={bulkSelection.includes(customer.id)}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        setBulkPreview(undefined);
                         setBulkSelection((current) =>
                           event.target.checked
                             ? [...current, customer.id]
                             : current.filter((id) => id !== customer.id),
-                        )
-                      }
+                        );
+                      }}
                     />{" "}
                     <span>
                       {customer.name}
@@ -958,30 +999,27 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                 ))}
               </div>
             </fieldset>
-            <p className="form-help">
-              {billingDialog === "due"
-                ? "Only active subscribers due today or earlier are selected. Future billing dates are excluded. Existing periods and incomplete cycles are skipped safely."
-                : "Leave every customer unchecked to bill all eligible customers. Existing periods and incomplete cycles are skipped safely."}
-            </p>
+            <p className="form-help">Nothing is created until you review the result. A conflict blocks that customer completely; other ready customers can still be processed.</p>
+            {bulkPreview ? <section className="bulk-review" aria-live="polite"><div className="bulk-review-summary"><span><strong>{bulkPreview.ready.length}</strong> Ready</span><span><strong>{bulkPreview.failed.length}</strong> Need Attention</span><span><strong>{bulkPreview.skipped.length}</strong> No Complete Period</span><span><strong>{formatRupees(bulkPreview.ready.reduce((sum, item) => sum + item.amountPaise, 0))}</strong> Recharge Total</span></div><div className="bulk-review-list">{bulkPreview.ready.map((item) => <div className="ready" key={`ready-${item.customerId}`}><span><strong>{item.customerName}</strong><small>{item.customerCode} · {item.cycles * 30} days</small></span><span>{formatBusinessDate(item.periodStart)} – {formatBusinessDate(item.periodEnd)}</span><strong>{formatRupees(item.amountPaise)}</strong></div>)}{bulkPreview.failed.map((item) => <div className="blocked" key={`failed-${item.customerId}`}><span><strong>{item.customerName ?? `Customer ${item.customerId}`}</strong><small>{item.customerCode || "Needs review"}</small></span><span>{item.reason}</span><strong>Blocked</strong></div>)}{bulkPreview.skipped.map((item) => <div className="skipped" key={`skipped-${item.customerId}`}><span><strong>{item.customerName}</strong><small>{item.customerCode}</small></span><span>{item.reason}</span><strong>Skipped</strong></div>)}</div></section> : null}
             </div>
             <div className="modal-actions">
               <button
                 type="button"
                 className="secondary"
-                onClick={() => setBillingDialog(undefined)}
+                onClick={() => { setBillingDialog(undefined); setBulkPreview(undefined); }}
               >
                 Cancel
               </button>
               <button
                 className="primary"
-                disabled={submitting || !billable.length}
+                disabled={submitting || !bulkSelection.length || Boolean(bulkPreview && !bulkPreview.ready.length)}
               >
                 <Users size={16} />{" "}
                 {submitting
                   ? "Working…"
-                  : bulkSelection.length
-                    ? `Bill ${bulkSelection.length} Selected`
-                    : "Bill All Eligible"}
+                  : bulkPreview
+                    ? `Create ${bulkPreview.ready.length} Bill${bulkPreview.ready.length === 1 ? "" : "s"}`
+                    : `Review ${bulkSelection.length} Customer${bulkSelection.length === 1 ? "" : "s"}`}
               </button>
             </div>
           </form>
@@ -1089,6 +1127,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
     mode: "",
   });
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
   const [notice, setNotice] = useState<Notice>();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -1171,6 +1210,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
       form.reset();
       setPaymentRequestKey(crypto.randomUUID());
       setCustomerId("");
+      setPaymentMode("cash");
       setPaymentOpen(false);
       setNotice({
         kind: "success",
@@ -1277,7 +1317,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
     <section className="page-content">
       <PageTitle
         title="Payments"
-        subtitle="Revenue collection and voucher registry."
+        subtitle="Record collections and review customer payment history."
         action={
           <div className="page-actions">
             <button
@@ -1291,6 +1331,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
               className="primary"
               onClick={() => {
                 setPaymentRequestKey(crypto.randomUUID());
+                setPaymentMode("cash");
                 setPaymentOpen(true);
               }}
             >
@@ -1304,7 +1345,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Collection history</p>
-            <h2>Payments Register</h2>
+            <h2>Payment History</h2>
           </div>
         </div>
         <div className="filter-grid">
@@ -1517,25 +1558,24 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
               </select>
             </label>
             <p className="form-help">
-              Restore archived subscribers from Subscribers before recording a
-              payment.
+              Restore archived customers from Customers before recording a payment.
             </p>
             {customer && (
               <div className="due-summary">
                 <span>
-                  Outstanding{" "}
+                  Customer Owes{" "}
                   <strong className="amount-due">
                     {formatRupees(customer.amountDuePaise)}
                   </strong>
                 </span>
                 <span>
-                  Available credit{" "}
+                  Customer Credit{" "}
                   <strong className="amount-credit">
                     {formatRupees(customer.creditBalancePaise)}
                   </strong>
                 </span>
                 <span>
-                  Cash due now{" "}
+                  Pay Now{" "}
                   <strong className={adjustedDue > 0 ? "amount-due" : ""}>
                     {formatRupees(adjustedDue)}
                   </strong>
@@ -1544,40 +1584,26 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
             )}
             {customer && customer.unbilledOpeningDuePaise > 0 ? (
               <p className="form-help">
-                {formatRupees(customer.unbilledOpeningDuePaise)} is an opening previous due that is not attached to an invoice yet. A Cash/UPI payment recorded now is held as advance credit and automatically applied when the first invoice is generated. Generate that invoice first if a discount is required.
+                Create the first bill before recording this payment if you need a discount. Otherwise, {formatRupees(customer.unbilledOpeningDuePaise)} will be safely held as customer credit.
               </p>
             ) : null}
-            <div className="balance-fields">
               <label>
-                Payment Date
-                <input
-                  name="paymentDate"
-                  type="date"
-                  max={today}
-                  defaultValue={today}
-                  required
-                />
-              </label>
-              <label>
-                Mode
-                <select name="paymentMode" defaultValue="cash">
+                Payment Method
+                <select name="paymentMode" value={paymentMode} onChange={(event) => setPaymentMode(event.target.value === "upi" ? "upi" : "cash")}>
                   <option value="cash">Cash</option>
                   <option value="upi">UPI</option>
                 </select>
               </label>
-            </div>
-            <label>
-              UTR / Payment Reference
+            {paymentMode === "upi" ? <label>
+              UPI Reference / UTR *
               <input
                 name="paymentReference"
                 maxLength={120}
                 autoComplete="off"
-                placeholder="Recommended for UPI or bank transfer"
+                placeholder="Enter the UPI transaction reference…"
+                required
               />
-            </label>
-            <p className="form-help">
-              Enter the UTR or transaction reference when available. The system will warn if it was already recorded.
-            </p>
+            </label> : null}
             {customer ? (
               <PaymentAmountFields
                 key={customerId}
@@ -1585,10 +1611,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                 holdAsCredit={customer.unbilledOpeningDuePaise > 0}
               />
             ) : null}
-            <label>
-              Notes
-              <input name="notes" maxLength={500} />
-            </label>
+            <details className="advanced-options"><summary>Payment Date & Notes</summary><label>Payment Date<input name="paymentDate" type="date" max={today} defaultValue={today} required /></label><label>Notes<input name="notes" autoComplete="off" maxLength={500} placeholder="Optional collection note…" /></label></details>
             </div>
             <div className="modal-actions">
               <button
@@ -2189,7 +2212,7 @@ export function ReportsPage({ serviceType }: { serviceType: ServiceType }) {
               hint="All current live balances"
             />
             <Metric
-              label="Active subscribers"
+              label="Services active today"
               value={String(report.activeSubscribers)}
               hint={`${report.dataQualityCount} need billing setup`}
             />

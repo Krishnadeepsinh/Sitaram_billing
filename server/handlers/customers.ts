@@ -109,7 +109,13 @@ export default async function handler(request: VercelRequest, response: VercelRe
           CASE WHEN coverage.latestPeriodEnd IS NULL THEN 'never_billed'
             WHEN coverage.currentlyCovered = 1 THEN CASE WHEN coverage.latestPeriodEnd = ? THEN 'expiring_today' ELSE 'active' END
             WHEN coverage.latestPeriodStart > ? THEN 'future' WHEN coverage.latestPeriodEnd < ? THEN 'expired' ELSE 'active' END AS coverageStatus,
-          COALESCE(coverage.hasHistoricalGap, 0) AS hasHistoricalGap
+          CASE WHEN customers.status = 'inactive' THEN 'suspended'
+            WHEN coverage.currentlyCovered = 1 THEN 'active'
+            WHEN coverage.latestPeriodStart > ? THEN 'scheduled'
+            WHEN coverage.latestPeriodEnd < ? THEN 'recharge_due'
+            ELSE 'not_billed' END AS serviceStatus,
+          COALESCE(coverage.hasHistoricalGap, 0) AS hasHistoricalGap,
+          coverage.historicalGapStart, coverage.historicalGapEnd, COALESCE(coverage.historicalGapDays, 0) AS historicalGapDays
           FROM customers JOIN areas ON areas.id = customers.area_id
           LEFT JOIN plans ON plans.id = customers.plan_id
           LEFT JOIN (
@@ -143,7 +149,14 @@ export default async function handler(request: VercelRequest, response: VercelRe
               MAX(CASE WHEN ranked.position = 1 THEN ranked.period_start END) AS latestPeriodStart,
               MAX(CASE WHEN ranked.position = 1 THEN ranked.period_end END) AS latestPeriodEnd,
               MAX(CASE WHEN ranked.period_start <= ? AND ranked.period_end >= ? THEN 1 ELSE 0 END) AS currentlyCovered,
-              MAX(CASE WHEN ranked.previousEnd IS NOT NULL AND ranked.period_start > date(ranked.previousEnd, '+1 day') THEN 1 ELSE 0 END) AS hasHistoricalGap
+              MAX(CASE WHEN ranked.previousEnd IS NOT NULL AND ranked.period_start > date(ranked.previousEnd, '+1 day')
+                AND COALESCE((SELECT status FROM customer_status_history WHERE customer_id = ranked.customer_id AND effective_date <= date(ranked.previousEnd, '+1 day') ORDER BY effective_date DESC, id DESC LIMIT 1), 'active') = 'active' THEN 1 ELSE 0 END) AS hasHistoricalGap,
+              MAX(CASE WHEN ranked.previousEnd IS NOT NULL AND ranked.period_start > date(ranked.previousEnd, '+1 day')
+                AND COALESCE((SELECT status FROM customer_status_history WHERE customer_id = ranked.customer_id AND effective_date <= date(ranked.previousEnd, '+1 day') ORDER BY effective_date DESC, id DESC LIMIT 1), 'active') = 'active' THEN date(ranked.previousEnd, '+1 day') END) AS historicalGapStart,
+              MAX(CASE WHEN ranked.previousEnd IS NOT NULL AND ranked.period_start > date(ranked.previousEnd, '+1 day')
+                AND COALESCE((SELECT status FROM customer_status_history WHERE customer_id = ranked.customer_id AND effective_date <= date(ranked.previousEnd, '+1 day') ORDER BY effective_date DESC, id DESC LIMIT 1), 'active') = 'active' THEN date(ranked.period_start, '-1 day') END) AS historicalGapEnd,
+              MAX(CASE WHEN ranked.previousEnd IS NOT NULL AND ranked.period_start > date(ranked.previousEnd, '+1 day')
+                AND COALESCE((SELECT status FROM customer_status_history WHERE customer_id = ranked.customer_id AND effective_date <= date(ranked.previousEnd, '+1 day') ORDER BY effective_date DESC, id DESC LIMIT 1), 'active') = 'active' THEN CAST(julianday(ranked.period_start) - julianday(ranked.previousEnd) - 1 AS INTEGER) ELSE 0 END) AS historicalGapDays
             FROM (SELECT invoices.customer_id, invoices.period_start, invoices.period_end,
               ROW_NUMBER() OVER (PARTITION BY invoices.customer_id ORDER BY invoices.period_end DESC, invoices.id DESC) AS position,
               LAG(invoices.period_end) OVER (PARTITION BY invoices.customer_id ORDER BY invoices.period_start, invoices.id) AS previousEnd
@@ -154,7 +167,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
           ${filterSql}
           ORDER BY customers.sort_order
           LIMIT ? OFFSET ?`,
-        args: [todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), serviceType, query, query, query, query, query, ...filterArgs, limit, offset],
+        args: [todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), todayInBusinessTimezone(), serviceType, query, query, query, query, query, ...filterArgs, limit, offset],
       })
       const total = Number(result.rows[0]?.totalCount ?? 0)
       return response.status(200).json({ items: result.rows.map(({ totalCount: _totalCount, ...row }) => row), total, limit, offset })

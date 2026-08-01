@@ -6,7 +6,6 @@ import {
   Clock,
   Download,
   FileText,
-  Info,
   Network,
   Pencil,
   Plus,
@@ -24,6 +23,7 @@ import {
 import { PaymentAmountFields } from "../components/PaymentAmountFields";
 import { Modal } from "../components/Modal";
 import {
+  addBillingDays,
   billingCyclePosition,
   formatBusinessDate,
   formatBusinessMonth,
@@ -86,13 +86,14 @@ function accountPosition(customer: Customer) {
       : "Settled";
 }
 function coverageLabel(customer: Customer) {
-  if (!customer.latestPeriodEnd) return "Never billed";
+  if (customer.serviceStatus === "suspended") return "Service suspended by admin";
+  if (!customer.latestPeriodEnd) return "Service not started";
   if (customer.coverageStatus === "future")
-    return `Future from ${formatBusinessDate(customer.latestPeriodStart!)}`;
-  if (customer.coverageStatus === "expiring_today") return "Expiring today";
+    return `Service inactive · starts ${formatBusinessDate(customer.latestPeriodStart!)}`;
+  if (customer.coverageStatus === "expiring_today") return "Service active today · renew by tomorrow";
   if (customer.coverageStatus === "expired")
-    return `Expired ${formatBusinessDate(customer.latestPeriodEnd)}`;
-  return `Active through ${formatBusinessDate(customer.latestPeriodEnd)}`;
+    return `Service inactive · recharge due since ${formatBusinessDate(addBillingDays(customer.latestPeriodEnd, 1))}`;
+  return `Service active through ${formatBusinessDate(customer.latestPeriodEnd)}`;
 }
 
 export function PlansPage({ serviceType }: { serviceType: ServiceType }) {
@@ -380,13 +381,13 @@ export function PlansPage({ serviceType }: { serviceType: ServiceType }) {
   );
 }
 
-export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
+export function CustomersPage({ serviceType, initialQuery = "", initialAction = "" }: { serviceType: ServiceType; initialQuery?: string; initialAction?: string }) {
   const [areas, setAreas] = useState<Area[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [archivedCustomers, setArchivedCustomers] = useState<Customer[]>([]);
   const [archivedLoading, setArchivedLoading] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [statusFilter, setStatusFilter] = useState<"all" | Customer["status"]>(
     "all",
   );
@@ -414,6 +415,8 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [quickInvoice, setQuickInvoice] = useState<Customer>();
   const [quickPayment, setQuickPayment] = useState<Customer>();
+  const [quickPaymentMode, setQuickPaymentMode] = useState<"cash" | "upi">("cash");
+  const [actionsCustomer, setActionsCustomer] = useState<Customer>();
   const [paymentRequestKey, setPaymentRequestKey] = useState(() =>
     crypto.randomUUID(),
   );
@@ -425,7 +428,6 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
   const [restoreReason, setRestoreReason] = useState("");
   const [permanentlyDeleting, setPermanentlyDeleting] = useState<Customer>();
   const [permanentDeleteReason, setPermanentDeleteReason] = useState("");
-  const [updatingStatus, setUpdatingStatus] = useState<number>();
   const [notice, setNotice] = useState<Notice>();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -433,6 +435,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
     () => new Set(),
   );
   const refreshSequence = useRef(0);
+  const routeActionHandled = useRef(false);
   const refresh = useCallback(
     (search: string, offset = 0) => {
       const sequence = ++refreshSequence.current;
@@ -487,15 +490,15 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
     const serviceChanged = previousService.current !== serviceType;
     previousService.current = serviceType;
     if (serviceChanged) {
-      setQuery("");
+      setQuery(initialQuery);
       setEditing(undefined);
       setFormOpen(false);
       setArchivedCustomers([]);
       setSelectedCustomerIds(new Set());
     }
     setCustomerOffset(0);
-    refresh(serviceChanged ? "" : queryRef.current, 0);
-  }, [refresh, serviceType]);
+    refresh(serviceChanged ? initialQuery : queryRef.current, 0);
+  }, [initialQuery, refresh, serviceType]);
 
   const filteredCustomers = useMemo(() => customers, [customers]);
   const allShownSelected =
@@ -620,7 +623,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
       setEditing(undefined);
       setNotice({
         kind: "success",
-        message: editing ? "Subscriber updated." : "Subscriber saved.",
+        message: editing ? "Customer updated." : "Customer saved.",
       });
       refresh(query);
     } catch (error) {
@@ -633,37 +636,6 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
       setSubmitting(false);
     }
   }
-  async function toggleStatus(customer: Customer) {
-    const nextStatus = customer.status === "active" ? "inactive" : "active";
-    setUpdatingStatus(customer.id);
-    try {
-      await updateCustomer(serviceType, {
-        id: customer.id,
-        name: customer.name,
-        areaId: customer.areaId,
-        phone: customer.phone ?? undefined,
-        stbNumber: customer.stbNumber ?? undefined,
-        planId: customer.planId ?? undefined,
-        installationDate: customer.installationDate ?? undefined,
-        status: nextStatus,
-        restartDate:
-          nextStatus === "active" ? todayInBusinessTimezone() : undefined,
-        statusReason: `Status changed to ${nextStatus} from subscriber directory`,
-      });
-      setNotice({
-        kind: "success",
-        message: `${customer.name} is now ${nextStatus}.`,
-      });
-      refresh(query);
-    } catch (error) {
-      setNotice({
-        kind: "error",
-        message: `${error instanceof Error ? error.message : "Unable to update status."} Use Edit Subscriber if a restart date is required.`,
-      });
-    } finally {
-      setUpdatingStatus(undefined);
-    }
-  }
   async function archiveCustomer() {
     if (!deleting) return;
     setSubmitting(true);
@@ -673,7 +645,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
       setArchiveReason("");
       setNotice({
         kind: "success",
-        message: "Subscriber archived. Financial history was retained.",
+        message: "Customer archived. Financial history was retained.",
       });
       refresh(query);
     } catch (error) {
@@ -733,6 +705,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
   };
   const openPayment = (customer: Customer) => {
     setPaymentRequestKey(crypto.randomUUID());
+    setQuickPaymentMode("cash");
     setQuickPayment(customer);
   };
   async function restoreArchived(customer: Customer) {
@@ -787,11 +760,11 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
         Payment: accountPosition(customer),
         Service: coverageLabel(customer),
         "Next Bill": customer.nextBillingStartDate ?? "",
-        Status: customer.status,
+        "Account Status": customer.status === "active" ? "Enabled" : "Suspended",
       })),
     );
   }
-  const openSummary = (customer: Customer) => {
+  const openSummary = useCallback((customer: Customer) => {
     setSummary(customer);
     setSummaryHistory(undefined);
     setSummaryLoading(true);
@@ -812,7 +785,17 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
         }),
       )
       .finally(() => setSummaryLoading(false));
-  };
+  }, [serviceType]);
+  useEffect(() => {
+    if (routeActionHandled.current || loading || !initialQuery || !customers.length) return;
+    const customer = customers.find((item) => item.customerCode === initialQuery) ?? customers[0];
+    if (!customer) return;
+    routeActionHandled.current = true;
+    if (initialAction === "recharge") setQuickInvoice(customer);
+    else if (initialAction === "payment") openPayment(customer);
+    else if (initialAction === "setup") openEdit(customer);
+    else if (initialAction === "view") openSummary(customer);
+  }, [customers, initialAction, initialQuery, loading, openSummary]);
   async function shareStatement() {
     if (!summary || !summaryHistory) return;
     setSubmitting(true);
@@ -859,8 +842,8 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
   return (
     <section className="page-content">
       <PageTitle
-        title="Subscribers"
-        subtitle="Manage subscriber status, 30-day coverage, billing, and collections."
+        title="Customers"
+        subtitle="See service, balance, and the next action for every customer."
         action={
           <div className="page-actions subscriber-page-actions">
             <button className="secondary" onClick={exportSubscribers}>
@@ -873,7 +856,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               <Archive size={16} /> Archived{archivedCustomers.length ? ` (${archivedCustomers.length})` : ""}
             </button>
             <button className="primary" onClick={openAdd}>
-              <Plus size={16} /> Add Subscriber
+              <Plus size={16} /> Add Customer
             </button>
           </div>
         }
@@ -891,7 +874,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               if (event.key === "Enter") { setCustomerOffset(0); refresh(query, 0); }
             }}
             placeholder="Search by name, ID, phone, STB, or area…"
-            aria-label="Search subscribers"
+            aria-label="Search customers"
           />
           <button className="secondary" onClick={() => { setCustomerOffset(0); refresh(query, 0); }}>
             Search
@@ -905,7 +888,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               checked={dueOnly}
               onChange={(event) => setDueOnly(event.target.checked)}
             />
-            <span>Pending Due Only</span>
+            <span>Unpaid Balance Only</span>
           </label>
           <label>
             <span className="sr-only">Status</span>
@@ -916,9 +899,9 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 setStatusFilter(event.target.value as typeof statusFilter)
               }
             >
-              <option value="all">Status: All</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
+              <option value="all">All Accounts</option>
+              <option value="active">Open Accounts</option>
+              <option value="inactive">Suspended Accounts</option>
             </select>
           </label>
           <label>
@@ -956,7 +939,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
       </article>
       <article className="panel table-panel responsive-register register-panel customer-register">
         <div className="register-heading">
-          <h2>Subscriber Directory</h2>
+          <h2>Customer List</h2>
           <span>
             {selectedCustomerIds.size
               ? `${selectedCustomerIds.size} selected`
@@ -964,7 +947,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           </span>
         </div>
         {loading ? (
-          <p className="empty-inline" role="status">Loading subscribers…</p>
+          <p className="empty-inline" role="status">Loading customers…</p>
         ) : filteredCustomers.length ? (
           <div className="table-wrap">
             <table>
@@ -976,16 +959,15 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                       type="checkbox"
                       checked={allShownSelected}
                       onChange={toggleAllShownCustomers}
-                      aria-label="Select all shown subscribers"
+                      aria-label="Select all shown customers"
                     />
                   </th>
                   <th className="subscriber-number-column">No.</th>
-                  <th>Subscriber</th>
-                  <th>STB / Area</th>
-                  <th>Plan & Balance</th>
-                  <th>Billing</th>
-                  <th>Status</th>
-                  <th aria-label="Actions">Actions</th>
+                  <th>Customer</th>
+                  <th>Plan</th>
+                  <th>Service</th>
+                  <th>Balance</th>
+                  <th aria-label="Next action">Next Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -998,6 +980,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                       customer.installationDate &&
                       customer.nextBillingStartDate,
                     );
+                  const primaryAction = !canInvoice ? "setup" : customer.serviceStatus === "recharge_due" || customer.serviceStatus === "not_billed" ? "recharge" : netDue(customer) > 0 ? "payment" : "recharge";
                   return (
                     <tr
                       key={customer.id}
@@ -1028,7 +1011,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                           {customer.sortOrder}
                         </span>
                       </td>
-                      <td data-label="Subscriber">
+                      <td data-label="Customer">
                         <span className="entity-cell">
                           <i className="avatar" aria-hidden="true">
                             {customer.name.slice(0, 1).toUpperCase()}
@@ -1039,149 +1022,48 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                               {customer.customerCode}
                               {customer.phone ? ` · ${customer.phone}` : ""}
                             </small>
+                            <small>{customer.stbNumber ? `STB ${customer.stbNumber} · ` : ""}{customer.areaName}</small>
                           </span>
                         </span>
                       </td>
-                      <td data-label="STB / Area">
-                        <strong>{customer.stbNumber || "N/A"}</strong>
+                      <td data-label="Plan">
+                        <strong>{customer.planName || "Plan missing"}</strong>
                         <small>{customer.areaName}</small>
                       </td>
-                      <td data-label="Plan & Balance">
-                        <strong>{customer.planName || "No plan"}</strong>
+                      <td data-label="Service">
                         <small
-                          className={
-                            netDue(customer) > 0
-                              ? "amount-due"
-                              : netDue(customer) < 0
-                                ? "amount-credit"
-                                : ""
-                          }
-                        >
-                          {accountPosition(customer)}
-                        </small>
-                      </td>
-                      <td data-label="Billing">
-                        <div className="subscriber-billing-cell">
-                          <button
-                            className="icon-button info-button"
-                            aria-label={`View financial summary for ${customer.name}`}
-                            title="Financial summary"
-                            aria-expanded={
-                              financialPopover?.customer.id === customer.id
-                            }
-                            onClick={(event) => {
-                              const bounds =
-                                event.currentTarget.getBoundingClientRect();
-                              setFinancialPopover((current) =>
-                                current?.customer.id === customer.id
-                                  ? undefined
-                                  : {
-                                      customer,
-                                      left: Math.min(
-                                        Math.max(12, bounds.left - 8),
-                                        window.innerWidth - 348,
-                                      ),
-                                      top: Math.min(
-                                        bounds.bottom + 8,
-                                        window.innerHeight - 250,
-                                      ),
-                                    },
-                              );
-                            }}
-                          >
-                            <Info size={15} aria-hidden="true" />
-                          </button>
-                          {netDue(customer) > 0 ? (
-                            <span
-                              className="due-period"
-                              title="Outstanding invoice period"
-                            >
-                              {formatDueStatus(customer)}
-                            </span>
-                          ) : null}
-                        </div>
-                        <small
-                          className={`coverage-label ${customer.coverageStatus}`}
+                          className={`coverage-label ${customer.serviceStatus}`}
                         >
                           {coverageLabel(customer)}
                         </small>
-                        <small>
-                          Next bill:{" "}
-                          {customer.nextBillingStartDate
-                            ? formatBusinessDate(customer.nextBillingStartDate)
-                            : "Not configured"}
-                        </small>
+                        <small className={`account-label ${customer.status}`}>{customer.status === "active" ? "Account open" : "Account suspended"}</small>
                         {customer.hasHistoricalGap ? (
-                          <small className="amount-due">
-                            Historical billing gap detected
+                          <small className="billing-gap-warning">
+                            <strong>Service dates not billed</strong>
+                            {customer.historicalGapStart && customer.historicalGapEnd
+                              ? `${formatBusinessDate(customer.historicalGapStart)} – ${formatBusinessDate(customer.historicalGapEnd)} (${customer.historicalGapDays} days)`
+                              : "Review this customer’s bill dates"}
                           </small>
                         ) : null}
                       </td>
-                      <td data-label="Status">
+                      <td data-label="Balance">
                         <button
-                          className={`status-toggle ${customer.status}`}
-                          role="switch"
-                          aria-checked={customer.status === "active"}
-                          aria-label={`${customer.name} is ${customer.status}. Switch to ${customer.status === "active" ? "inactive" : "active"}.`}
-                          disabled={updatingStatus === customer.id}
-                          onClick={() => void toggleStatus(customer)}
+                          className={`balance-link ${netDue(customer) > 0 ? "amount-due" : netDue(customer) < 0 ? "amount-credit" : ""}`}
+                          aria-label={`View balance details for ${customer.name}`}
+                          aria-expanded={financialPopover?.customer.id === customer.id}
+                          onClick={(event) => {
+                            const bounds = event.currentTarget.getBoundingClientRect();
+                            setFinancialPopover((current) => current?.customer.id === customer.id ? undefined : { customer, left: Math.min(Math.max(12, bounds.left - 8), window.innerWidth - 348), top: Math.min(bounds.bottom + 8, window.innerHeight - 250) });
+                          }}
                         >
-                          <i aria-hidden="true" />
-                          {updatingStatus === customer.id
-                            ? "Updating…"
-                            : customer.status}
+                          <strong>{accountPosition(customer)}</strong>
+                          <small>{netDue(customer) > 0 ? formatDueStatus(customer) : netDue(customer) < 0 ? "Customer credit" : "No payment due"}</small>
                         </button>
                       </td>
-                      <td data-label="Actions">
-                        <div className="action-row customer-actions">
-                          <button
-                            className="icon-button"
-                            aria-label={`View account history for ${customer.name}`}
-                            title="Account history"
-                            onClick={() => openSummary(customer)}
-                          >
-                            <Clock size={16} aria-hidden="true" />
-                          </button>
-                          <button
-                            className="icon-button action-invoice"
-                            aria-label={`Create invoice for ${customer.name}`}
-                            title={
-                              canInvoice
-                                ? "Create invoice"
-                                : "Active plan and installation date required"
-                            }
-                            disabled={!canInvoice}
-                            onClick={() => setQuickInvoice(customer)}
-                          >
-                            <FileText size={16} aria-hidden="true" />
-                          </button>
-                          <button
-                            className="icon-button action-payment"
-                            aria-label={`Record payment for ${customer.name}`}
-                            title="Record payment"
-                            onClick={() => openPayment(customer)}
-                          >
-                            <Wallet size={16} aria-hidden="true" />
-                          </button>
-                          <button
-                            className="icon-button"
-                            aria-label={`Edit ${customer.name}`}
-                            title="Edit subscriber"
-                            onClick={() => openEdit(customer)}
-                          >
-                            <Pencil size={16} aria-hidden="true" />
-                          </button>
-                          <button
-                            className="icon-button danger"
-                            aria-label={`Archive ${customer.name}`}
-                            title="Archive subscriber"
-                            onClick={() => {
-                              setArchiveReason("");
-                              setDeleting(customer);
-                            }}
-                          >
-                            <Trash2 size={16} aria-hidden="true" />
-                          </button>
+                      <td data-label="Next Action">
+                        <div className="action-row customer-actions simplified-actions">
+                          <button className="primary row-primary-action" onClick={() => primaryAction === "setup" ? openEdit(customer) : primaryAction === "payment" ? openPayment(customer) : setQuickInvoice(customer)}>{primaryAction === "setup" ? "Complete Setup" : primaryAction === "payment" ? "Record Payment" : customer.serviceStatus === "active" ? "Add Recharge" : "Recharge"}</button>
+                          <button className="secondary row-more-action" onClick={() => setActionsCustomer(customer)}>More</button>
                         </div>
                       </td>
                     </tr>
@@ -1192,8 +1074,8 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           </div>
       ) : (
           <Empty
-            label="No subscribers found"
-            text="Change the filters or add a subscriber."
+            label="No customers found"
+            text="Change the filters or add a customer."
           />
         )}
         {!loading && customerTotal > customerPageSize ? (
@@ -1332,7 +1214,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
 
       {formOpen && (
         <Modal
-          title={editing ? `Edit ${editing.customerCode}` : "Add Subscriber"}
+          title={editing ? `Edit ${editing.customerCode}` : "Add Customer"}
           wide
           compact
           onClose={() => {
@@ -1465,15 +1347,15 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
             {editing ? (
               <>
                 <label>
-                  Status
+                  Account Control
                   <select name="status" defaultValue={editing.status}>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
+                    <option value="active">Account Open</option>
+                    <option value="inactive">Account Suspended</option>
                   </select>
                 </label>
                 {editing.status === "inactive" ? (
                   <label>
-                    Restart Date
+                    Service Restarts
                     <input
                       name="restartDate"
                       type="date"
@@ -1482,11 +1364,11 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                   </label>
                 ) : null}
                 <label className="full-field">
-                  Change Reason
+                  Account Change Reason
                   <input
                     name="statusReason"
                     maxLength={250}
-                    placeholder="Required when changing service status"
+                    placeholder="Example: Customer requested service pause…"
                   />
                 </label>
               </>
@@ -1533,8 +1415,8 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 {submitting
                   ? "Saving…"
                   : editing
-                    ? "Update Subscriber"
-                    : "Add Subscriber"}
+                    ? "Update Customer"
+                    : "Add Customer"}
               </button>
             </div>
           </form>
@@ -1542,7 +1424,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
       )}
       {summary && (
         <Modal
-          title="Financial Summary & History"
+          title="Customer Balance & History"
           wide
           onClose={() => setSummary(undefined)}
         >
@@ -1562,7 +1444,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 <dd>{coverageLabel(summary)}</dd>
               </div>
               <div>
-                <dt>Next valid billing start</dt>
+                <dt>Next recharge starts</dt>
                 <dd>
                   {summary.nextBillingStartDate
                     ? formatBusinessDate(summary.nextBillingStartDate)
@@ -1570,33 +1452,33 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 </dd>
               </div>
               <div>
-                <dt>Pending invoice period</dt>
+                <dt>Recharge period due</dt>
                 <dd>{formatDuePeriod(summary)}</dd>
               </div>
               <div>
-                <dt>Open invoices</dt>
+                <dt>Open bills</dt>
                 <dd>{summary.openInvoiceCount}</dd>
               </div>
               <div>
-                <dt>Previous due</dt>
+                <dt>Older unpaid amount</dt>
                 <dd className={summary.previousDuePaise > 0 ? "amount-due" : ""}>
                   {formatRupees(summary.previousDuePaise)}
                 </dd>
               </div>
               <div>
-                <dt>Current cycle due</dt>
+                <dt>Current recharge due</dt>
                 <dd className={summary.currentPlanDuePaise > 0 ? "amount-due" : ""}>
                   {formatRupees(summary.currentPlanDuePaise)}
                 </dd>
               </div>
               <div>
-                <dt>Next / future cycle due</dt>
+                <dt>Future recharge due</dt>
                 <dd className={summary.futurePlanDuePaise > 0 ? "amount-due" : ""}>
                   {formatRupees(summary.futurePlanDuePaise)}
                 </dd>
               </div>
               <div>
-                <dt>Advance credit</dt>
+                <dt>Customer credit</dt>
                 <dd
                   className={
                     summary.creditBalancePaise > 0 ? "amount-credit" : ""
@@ -1606,7 +1488,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 </dd>
               </div>
               <div className="summary-net">
-                <dt>Net account position</dt>
+                <dt>Balance</dt>
                 <dd
                   className={
                     netDue(summary) > 0
@@ -1624,7 +1506,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               <div className="history-heading">
                 <span>
                   <h3>Account history</h3>
-                  <small>Invoices and payments, including the current cycle</small>
+                  <small>Bills and payments, including the current recharge</small>
                 </span>
                 <strong>{accountHistory.length} entries</strong>
               </div>
@@ -1637,7 +1519,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                       <article className="ledger-entry invoice" role="listitem" key={`invoice-${entry.id}`}>
                         <div className="ledger-primary">
                           <strong className="amount-due">−{formatRupees(entry.invoice.chargeAmountPaise)}</strong>
-                          <small>Invoice · {entry.invoice.status}</small>
+                          <small>Bill · {entry.invoice.status}</small>
                         </div>
                         <div className="ledger-reference">
                           <time dateTime={entry.invoice.issuedDate}>{formatBusinessDate(entry.invoice.issuedDate)}</time>
@@ -1696,7 +1578,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                   openEdit(summary);
                 }}
               >
-                Edit Subscriber
+                Edit Customer
               </button>
               {netDue(summary) > 0 ? (
                 <button
@@ -1713,9 +1595,10 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           </div>
         </Modal>
       )}
+      {actionsCustomer ? <Modal title={actionsCustomer.name} compact onClose={() => setActionsCustomer(undefined)}><div className="customer-action-menu"><p>Choose an action for {actionsCustomer.customerCode}.</p><button className="secondary" onClick={() => { const customer = actionsCustomer; setActionsCustomer(undefined); openSummary(customer); }}><Clock size={16} aria-hidden="true" /> View History & Statement</button><button className="secondary" disabled={actionsCustomer.status !== "active" || !actionsCustomer.planId || !actionsCustomer.planIsActive || !actionsCustomer.installationDate || !actionsCustomer.nextBillingStartDate} onClick={() => { const customer = actionsCustomer; setActionsCustomer(undefined); setQuickInvoice(customer); }}><FileText size={16} aria-hidden="true" /> Add Recharge</button><button className="secondary" onClick={() => { const customer = actionsCustomer; setActionsCustomer(undefined); openPayment(customer); }}><Wallet size={16} aria-hidden="true" /> Record Payment</button><button className="secondary" onClick={() => { const customer = actionsCustomer; setActionsCustomer(undefined); openEdit(customer); }}><Pencil size={16} aria-hidden="true" /> Edit Customer & Account</button><button className="danger-button" onClick={() => { const customer = actionsCustomer; setActionsCustomer(undefined); setArchiveReason(""); setDeleting(customer); }}><Trash2 size={16} aria-hidden="true" /> Archive Customer</button></div></Modal> : null}
       {quickInvoice && (
         <Modal
-          title="Generate Invoice"
+          title="Add Service Recharge"
           onClose={() => setQuickInvoice(undefined)}
         >
           <InvoiceForm
@@ -1727,7 +1610,9 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               setQuickInvoice(undefined);
               setNotice({
                 kind: "success",
-                message: `${result.invoiceCode} ${result.replayed ? "already existed" : "created"} for ${quickInvoice.name}. Coverage: ${formatBusinessDate(result.periodStart)} to ${formatBusinessDate(result.periodEnd)}.`,
+                message: result.replayed
+                  ? `${result.invoiceCode} already existed for ${quickInvoice.name}; no duplicate was created.${result.paymentCode ? ` Payment ${result.paymentCode} recorded.` : ""}`
+                  : `${quickInvoice.name} recharged through ${formatBusinessDate(result.periodEnd)}. Bill ${result.invoiceCode} created.${result.paymentCode ? ` Payment ${result.paymentCode} recorded.` : ""}`,
               });
               refresh(query);
             }}
@@ -1746,9 +1631,8 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               <span>
                 <strong>{quickPayment.name}</strong>
                 <small>
-                  Outstanding {formatRupees(quickPayment.amountDuePaise)} ·
-                  Credit {formatRupees(quickPayment.creditBalancePaise)} · Cash
-                  due{" "}
+                  Customer owes {formatRupees(quickPayment.amountDuePaise)} ·
+                  Credit {formatRupees(quickPayment.creditBalancePaise)} · Pay now{" "}
                   {formatRupees(
                     Math.max(
                       0,
@@ -1761,22 +1645,12 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
             </div>
             {quickPayment.unbilledOpeningDuePaise > 0 ? (
               <p className="form-help full-field">
-                {formatRupees(quickPayment.unbilledOpeningDuePaise)} is an opening previous due that is not attached to an invoice yet. A Cash/UPI payment recorded now is held as advance credit and automatically applied when the first invoice is generated. Generate that invoice first if a discount is required.
+                Create the first bill before recording this payment if you need to apply a discount. Otherwise, {formatRupees(quickPayment.unbilledOpeningDuePaise)} will be safely held as customer credit.
               </p>
             ) : null}
             <label>
-              Payment Date
-              <input
-                name="paymentDate"
-                type="date"
-                max={todayInBusinessTimezone()}
-                defaultValue={todayInBusinessTimezone()}
-                required
-              />
-            </label>
-            <label>
-              Mode
-              <select name="paymentMode" defaultValue="cash">
+              Payment Method
+              <select name="paymentMode" value={quickPaymentMode} onChange={(event) => setQuickPaymentMode(event.target.value === "upi" ? "upi" : "cash")}>
                 <option value="cash">Cash</option>
                 <option value="upi">UPI</option>
               </select>
@@ -1789,27 +1663,17 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               )}
               holdAsCredit={quickPayment.unbilledOpeningDuePaise > 0}
             />
-            <label className="full-field">
-              UTR / Payment Reference
+            {quickPaymentMode === "upi" ? <label className="full-field">
+              UPI Reference / UTR *
               <input
                 name="paymentReference"
                 autoComplete="off"
                 maxLength={120}
-                placeholder="Recommended for UPI or bank transfer"
+                placeholder="Enter the UPI transaction reference…"
+                required
               />
-            </label>
-            <p className="form-help full-field">
-              The admin confirms the payment. A repeated UTR is blocked to prevent double entry.
-            </p>
-            <label className="full-field">
-              Notes
-              <input
-                name="notes"
-                autoComplete="off"
-                maxLength={500}
-                placeholder="Optional collection note…"
-              />
-            </label>
+            </label> : null}
+            <details className="advanced-options full-field"><summary>Payment Date & Notes</summary><label>Payment Date<input name="paymentDate" type="date" max={todayInBusinessTimezone()} defaultValue={todayInBusinessTimezone()} required /></label><label>Notes<input name="notes" autoComplete="off" maxLength={500} placeholder="Optional collection note…" /></label></details>
             </div>
             <div className="modal-actions full-field">
               <button

@@ -1,5 +1,5 @@
 import { createInvoicePeriod, MAX_BILLING_CYCLES, MAX_MONEY_PAISE, nextEligibleBillingDate } from '../../src/lib/billing.js'
-import { parseStrictDate, todayInBusinessTimezone } from '../../src/lib/date.js'
+import { addBillingDays, parseStrictDate, todayInBusinessTimezone } from '../../src/lib/date.js'
 import { recordAudit } from './audit.js'
 import { recomputeBillingPosition } from './coverage.js'
 import { rebuildCustomerLedger } from './ledger.js'
@@ -18,6 +18,7 @@ export type CreateInvoiceInput = {
   issuedDate?: string
   billingMode?: 'normal' | 'historical'
   historicalReason?: string
+  restartService?: boolean
 }
 
 export async function createInvoiceInTransaction(transaction: DatabaseTransaction, input: CreateInvoiceInput) {
@@ -37,12 +38,31 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
   const today = todayInBusinessTimezone()
   if (issuedDate > today) throw new InvoiceRequestError(400, 'Invoice date cannot be in the future.')
   const expectedPeriodStart = parseStrictDate(input.expectedPeriodStart)
-  const currentNextStart = parseStrictDate(String(row.next_billing_start_date))
+  let currentNextStart = parseStrictDate(String(row.next_billing_start_date))
   const requestedStart = parseStrictDate(input.periodStart ?? expectedPeriodStart)
-  const invoiceCount = await transaction.execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ? AND is_deleted = 0', args: [input.customerId] })
+  const invoiceCount = await transaction.execute({ sql: 'SELECT COUNT(*) AS count, MAX(period_end) AS latestPeriodEnd FROM invoices WHERE customer_id = ? AND is_deleted = 0 AND is_merged = 0', args: [input.customerId] })
   const hasInvoiceHistory = Number(invoiceCount.rows[0].count) > 0
   if (billingMode === 'normal') {
     if (row.status !== 'active' || !row.plan_id || row.price_paise === null || Number(row.plan_is_active) !== 1) throw new InvoiceRequestError(400, 'Customer must be active and have an active plan before renewal billing.')
+    if (input.restartService) {
+      const latestPeriodEnd = invoiceCount.rows[0].latestPeriodEnd ? String(invoiceCount.rows[0].latestPeriodEnd) : null
+      if (!latestPeriodEnd) throw new InvoiceRequestError(409, 'This customer has no previous service period to restart. Create the first recharge normally.')
+      if (requestedStart !== today) throw new InvoiceRequestError(409, `Restarted service must begin today (${today}). Refresh the form and try again.`)
+      if (latestPeriodEnd >= today) {
+        const retryPeriod = createInvoicePeriod(requestedStart, input.monthsBilled)
+        const existing = await transaction.execute({ sql: `SELECT id, invoice_code AS invoiceCode, period_start AS periodStart, period_end AS periodEnd FROM invoices
+          WHERE customer_id = ? AND service_type = ? AND period_start = ? AND period_end = ? AND billing_mode = 'normal' AND is_deleted = 0 AND is_merged = 0 LIMIT 1`, args: [input.customerId, input.serviceType, retryPeriod.periodStart, retryPeriod.periodEnd] })
+        if (existing.rows[0]) return { invoiceId: Number(existing.rows[0].id), invoiceCode: String(existing.rows[0].invoiceCode), periodStart: String(existing.rows[0].periodStart), periodEnd: String(existing.rows[0].periodEnd), nextEligibleDate: nextEligibleBillingDate(String(existing.rows[0].periodEnd)), replayed: true }
+        throw new InvoiceRequestError(409, `Service is already covered through ${latestPeriodEnd}. Continue from the next recharge date instead.`)
+      }
+      const inactiveStart = addBillingDays(latestPeriodEnd, 1)
+      if (inactiveStart < today) {
+        const now = new Date().toISOString()
+        await transaction.execute({ sql: 'INSERT INTO customer_status_history (customer_id, status, effective_date, reason, created_at) VALUES (?, ?, ?, ?, ?)', args: [input.customerId, 'inactive', inactiveStart, 'Service paused after coverage ended', now] })
+        await transaction.execute({ sql: 'INSERT INTO customer_status_history (customer_id, status, effective_date, reason, created_at) VALUES (?, ?, ?, ?, ?)', args: [input.customerId, 'active', today, 'Service restarted with recharge', now] })
+        currentNextStart = (await recomputeBillingPosition(transaction, input.customerId)).nextBillingStartDate ?? today
+      }
+    }
     if (expectedPeriodStart !== currentNextStart) {
       const expectedPeriod = createInvoicePeriod(expectedPeriodStart, input.monthsBilled)
       const existing = await transaction.execute({ sql: `SELECT id, invoice_code AS invoiceCode, period_start AS periodStart, period_end AS periodEnd
@@ -50,7 +70,10 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
       if (existing.rows[0]) return { invoiceId: Number(existing.rows[0].id), invoiceCode: String(existing.rows[0].invoiceCode), periodStart: String(existing.rows[0].periodStart), periodEnd: String(existing.rows[0].periodEnd), nextEligibleDate: nextEligibleBillingDate(String(existing.rows[0].periodEnd)), replayed: true }
       throw new InvoiceRequestError(409, `Billing position changed. The next eligible start date is ${currentNextStart}.`, { nextEligibleDate: currentNextStart })
     }
-    if (hasInvoiceHistory && requestedStart < currentNextStart) throw new InvoiceRequestError(409, `Normal renewal cannot start before ${currentNextStart}. Use Missed Previous Period for an older uncovered period.`, { nextEligibleDate: currentNextStart })
+    if (hasInvoiceHistory && requestedStart !== currentNextStart) {
+      if (requestedStart < currentNextStart) throw new InvoiceRequestError(409, `Renewal coverage must start on ${currentNextStart}. Use Bill Missed Dates for an older uncovered period. No invoice was created.`, { nextEligibleDate: currentNextStart })
+      throw new InvoiceRequestError(409, `Renewal coverage must start on ${currentNextStart} so no service dates are skipped. To pause service, suspend the account and reactivate it with a restart date. No invoice was created.`, { nextEligibleDate: currentNextStart })
+    }
   }
 
   const period = createInvoicePeriod(requestedStart, input.monthsBilled)
@@ -67,11 +90,11 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
   const exact = await transaction.execute({ sql: `SELECT id, invoice_code AS invoiceCode, period_start AS periodStart, period_end AS periodEnd FROM invoices
     WHERE customer_id = ? AND service_type = ? AND period_start = ? AND period_end = ? AND billing_mode = ? AND is_deleted = 0 AND is_merged = 0 LIMIT 1`, args: [input.customerId, input.serviceType, period.periodStart, period.periodEnd, billingMode] })
   if (exact.rows[0]) return { invoiceId: Number(exact.rows[0].id), invoiceCode: String(exact.rows[0].invoiceCode), periodStart: String(exact.rows[0].periodStart), periodEnd: String(exact.rows[0].periodEnd), nextEligibleDate: nextEligibleBillingDate(String(exact.rows[0].periodEnd)), replayed: true }
-  const overlap = await transaction.execute({ sql: `SELECT invoice_code AS invoiceCode, period_start AS periodStart, period_end AS periodEnd FROM invoices
+  const overlap = await transaction.execute({ sql: `SELECT invoice_code AS invoiceCode, period_start AS periodStart, period_end AS periodEnd, status FROM invoices
     WHERE customer_id = ? AND is_deleted = 0 AND is_merged = 0 AND period_start <= ? AND period_end >= ? ORDER BY period_start LIMIT 1`, args: [input.customerId, period.periodEnd, period.periodStart] })
   if (overlap.rows[0]) {
     const nextEligibleDate = nextEligibleBillingDate(String(overlap.rows[0].periodEnd))
-    throw new InvoiceRequestError(409, `${overlap.rows[0].invoiceCode} already covers ${overlap.rows[0].periodStart} to ${overlap.rows[0].periodEnd}. The next eligible start date is ${nextEligibleDate}.`, { conflict: overlap.rows[0], nextEligibleDate })
+    throw new InvoiceRequestError(409, `No invoice was created. ${overlap.rows[0].invoiceCode} (${overlap.rows[0].status}) already covers ${overlap.rows[0].periodStart} to ${overlap.rows[0].periodEnd}. Choose a fully uncovered range, or bill uncovered 30-day cycles separately.`, { conflict: overlap.rows[0], nextEligibleDate })
   }
 
   let planId = Number(row.plan_id)
@@ -113,6 +136,6 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'system_credit', 'Automatic credit application', 'settled', ?)`, args: [paymentCode, input.customerId, input.serviceType, row.customer_code, row.name, row.area_id, row.area_name, row.stb_number, todayInBusinessTimezone(), now] })
     await rebuildCustomerLedger(transaction, input.customerId)
   }
-  await recordAudit(transaction, { entityType: 'invoice', entityId: invoiceId, action: billingMode === 'historical' ? 'historical_invoice_created' : 'invoice_created', reason: input.historicalReason, details: { invoiceCode, planId, planName, issuedDate, periodStart: period.periodStart, periodEnd: period.periodEnd, serviceAmount } })
+  await recordAudit(transaction, { entityType: 'invoice', entityId: invoiceId, action: billingMode === 'historical' ? 'historical_invoice_created' : 'invoice_created', reason: input.historicalReason, details: { invoiceCode, planId, planName, issuedDate, periodStart: period.periodStart, periodEnd: period.periodEnd, serviceAmount, serviceRestart: input.restartService === true } })
   return { invoiceId, invoiceCode, periodStart: period.periodStart, periodEnd: period.periodEnd, nextEligibleDate: position.nextBillingStartDate, replayed: false }
 }
