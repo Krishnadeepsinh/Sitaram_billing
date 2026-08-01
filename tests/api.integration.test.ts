@@ -624,6 +624,10 @@ describe('financial API flow', () => {
   })
 
   it('reports service-period revenue for every invoice overlapping the selected range', async () => {
+    const reportQuery = { serviceType: 'cable', from: '2026-07-01', to: '2026-07-10', dateBasis: 'service' }
+    const before = new ResponseMock()
+    await reportHandler(request('GET', cookie, undefined, reportQuery), before as unknown as VercelResponse)
+    expect(before.statusCode).toBe(200)
     const created = new ResponseMock()
     await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Service Basis Boundary', areaId: 1, planId: 1, installationDate: '2026-06-20', openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
     const customerId = Number((created.body as { id: number }).id)
@@ -631,9 +635,9 @@ describe('financial API flow', () => {
     await invoiceHandler(request('POST', cookie, { serviceType: 'cable', customerId, monthsBilled: 1, expectedPeriodStart: todayInBusinessTimezone(), periodStart: '2026-06-20', billingMode: 'historical', historicalReason: 'Acceptance boundary test' }), invoice as unknown as VercelResponse)
     expect(invoice.statusCode).toBe(201)
     const report = new ResponseMock()
-    await reportHandler(request('GET', cookie, undefined, { serviceType: 'cable', from: '2026-07-01', to: '2026-07-10', dateBasis: 'service' }), report as unknown as VercelResponse)
+    await reportHandler(request('GET', cookie, undefined, reportQuery), report as unknown as VercelResponse)
     expect(report.statusCode).toBe(200)
-    expect((report.body as { billedPaise: number }).billedPaise).toBe(10000)
+    expect((report.body as { billedPaise: number }).billedPaise).toBe((before.body as { billedPaise: number }).billedPaise + 10000)
   })
 
   it('keeps historical invoice and payment area snapshots after an area rename', async () => {
