@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   Archive,
   Clock,
@@ -21,6 +22,7 @@ import {
   rupeesToPaise,
 } from "../lib/money";
 import { PaymentAmountFields } from "../components/PaymentAmountFields";
+import { Modal } from "../components/Modal";
 import {
   billingCyclePosition,
   formatBusinessDate,
@@ -402,6 +404,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
     left: number;
     top: number;
   }>();
+  const financialPopoverDialog = useRef<HTMLElement>(null);
   const [summaryHistory, setSummaryHistory] = useState<{
     invoices: Invoice[];
     payments: Payment[];
@@ -470,6 +473,14 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
   const previousService = useRef<ServiceType | undefined>(undefined);
   const queryRef = useRef(query);
   queryRef.current = query;
+  useEffect(() => {
+    if (!financialPopover) return;
+    const previous = document.activeElement as HTMLElement | null;
+    financialPopoverDialog.current?.querySelector<HTMLElement>("button")?.focus();
+    return () => {
+      if (previous && document.contains(previous)) previous.focus();
+    };
+  }, [financialPopover]);
   useEffect(() => {
     const serviceChanged = previousService.current !== serviceType;
     previousService.current = serviceType;
@@ -1228,7 +1239,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
         </aside>
       ) : null}
 
-      {financialPopover ? (
+      {financialPopover ? createPortal(
         <div
           className="financial-popover-layer"
           onMouseDown={(event) => {
@@ -1237,11 +1248,17 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           }}
           onKeyDown={(event) => {
             if (event.key === "Escape") setFinancialPopover(undefined);
+            if (event.key === "Tab") {
+              event.preventDefault();
+              financialPopoverDialog.current?.querySelector<HTMLElement>("button")?.focus();
+            }
           }}
         >
           <section
+            ref={financialPopoverDialog}
             className="financial-popover"
             role="dialog"
+            aria-modal="true"
             aria-label={`Financial summary for ${financialPopover.customer.name}`}
             style={{
               left: financialPopover.left,
@@ -1307,7 +1324,8 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
               </div>
             </dl>
           </section>
-        </div>
+        </div>,
+        document.body,
       ) : null}
 
       {formOpen && (
@@ -2012,81 +2030,6 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
   );
 }
 
-function Modal({
-  title,
-  onClose,
-  wide,
-  compact,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  wide?: boolean;
-  compact?: boolean;
-  children: ReactNode;
-}) {
-  const dialogRef = useRef<HTMLElement>(null);
-  const titleId = useId();
-  const focusable = () =>
-    Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>(
-        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href]",
-      ) ?? [],
-    );
-  useEffect(() => {
-    const previousFocus = document.activeElement as HTMLElement | null;
-    focusable()[0]?.focus();
-    return () => previousFocus?.focus();
-  }, []);
-  function handleKey(event: React.KeyboardEvent) {
-    if (event.key === "Escape") {
-      onClose();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const elements = focusable();
-    const first = elements[0];
-    const last = elements.at(-1);
-    if (!first || !last) return;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-  return (
-    <div
-      className="modal-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        ref={dialogRef}
-        className={`${wide ? "modal modal-wide" : "modal"}${compact ? " modal-compact" : ""}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onKeyDown={handleKey}
-      >
-        <div className="modal-heading">
-          <h2 id={titleId}>{title}</h2>
-          <button
-            className="icon-button"
-            aria-label="Close dialog"
-            onClick={onClose}
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </div>
-        {children}
-      </section>
-    </div>
-  );
-}
 function PageTitle({
   title,
   subtitle,

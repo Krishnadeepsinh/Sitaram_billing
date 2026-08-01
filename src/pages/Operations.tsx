@@ -1,9 +1,7 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import type { FormEvent, ReactNode } from "react";
@@ -25,8 +23,8 @@ import {
   UserPlus,
   Users,
   WalletCards,
-  X,
 } from "lucide-react";
+import { Modal } from "../components/Modal";
 import {
   bulkCreateInvoices,
   changePassword,
@@ -2698,79 +2696,6 @@ function PdfPreviewModal({ title, url, onClose }: { title: string; url: string; 
   return <Modal title={title} onClose={onClose}><iframe className="pdf-preview-frame" title={title} src={url} /></Modal>
 }
 
-function Modal({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const dialog = useRef<HTMLElement>(null);
-  const titleId = useId();
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    dialog.current
-      ?.querySelector<HTMLElement>(
-        'button, input, select, textarea, iframe, [tabindex]:not([tabindex="-1"])',
-      )
-      ?.focus();
-    return () => previous?.focus();
-  }, []);
-  function handleKey(event: React.KeyboardEvent) {
-    if (event.key === "Escape") {
-      onClose();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const items = [
-      ...(dialog.current?.querySelectorAll<HTMLElement>(
-        'button, input, select, textarea, iframe, a[href], [tabindex]:not([tabindex="-1"])',
-      ) ?? []),
-    ].filter((item) => !item.hasAttribute("disabled"));
-    if (!items.length) return;
-    const first = items[0];
-    const last = items.at(-1)!;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-  return (
-    <div
-      className="modal-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        ref={dialog}
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onKeyDown={handleKey}
-      >
-        <div className="panel-heading">
-          <h2 id={titleId}>{title}</h2>
-          <button
-            className="icon-button"
-            aria-label="Close dialog"
-            onClick={onClose}
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </div>
-        {children}
-      </section>
-    </div>
-  );
-}
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
