@@ -4,6 +4,7 @@ export type DatabaseTransaction = Awaited<ReturnType<ReturnType<typeof createCli
 
 let client: ReturnType<typeof createClient> | undefined
 let localWriteTail = Promise.resolve()
+let paymentReferenceMigration: Promise<void> | undefined
 
 export function database() {
   const url = process.env.TURSO_DATABASE_URL
@@ -17,6 +18,19 @@ export function database() {
 export function closeDatabase() {
   client?.close()
   client = undefined
+  paymentReferenceMigration = undefined
+}
+
+export function ensurePaymentReferenceColumn() {
+  paymentReferenceMigration ??= (async () => {
+    await database().execute('ALTER TABLE payments ADD COLUMN payment_reference TEXT').catch((error: unknown) => {
+      if (!(error instanceof Error) || !/duplicate column name|already exists/i.test(error.message)) throw error
+    })
+    await database().execute(`CREATE UNIQUE INDEX IF NOT EXISTS payments_reference_unique
+      ON payments(lower(trim(payment_reference)))
+      WHERE is_deleted = 0 AND payment_reference IS NOT NULL AND trim(payment_reference) <> ''`)
+  })()
+  return paymentReferenceMigration
 }
 
 function isBusy(error: unknown) {
