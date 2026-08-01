@@ -89,6 +89,13 @@ function canRecharge(customer: Customer) {
     )
   );
 }
+function hasProtectedServicePeriod(customer: Customer) {
+  return (
+    customer.coverageStatus === "active" ||
+    customer.coverageStatus === "expiring_today" ||
+    customer.coverageStatus === "future"
+  );
+}
 function accountPosition(customer: Customer) {
   const balance = netDue(customer);
   return balance > 0
@@ -429,6 +436,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
   const [quickPayment, setQuickPayment] = useState<Customer>();
   const [quickPaymentMode, setQuickPaymentMode] = useState<"cash" | "upi">("cash");
   const [actionsCustomer, setActionsCustomer] = useState<Customer>();
+  const [statusCustomer, setStatusCustomer] = useState<Customer>();
   const [paymentRequestKey, setPaymentRequestKey] = useState(() =>
     crypto.randomUUID(),
   );
@@ -643,6 +651,40 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
         kind: "error",
         message:
           error instanceof Error ? error.message : "Unable to save subscriber.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  async function changeCustomerStatus(customer: Customer) {
+    if (hasProtectedServicePeriod(customer)) return;
+    const status = customer.status === "active" ? "inactive" : "active";
+    const action = status === "active" ? "activate" : "deactivate";
+    setSubmitting(true);
+    try {
+      await updateCustomer(serviceType, {
+        id: customer.id,
+        name: customer.name,
+        areaId: customer.areaId,
+        phone: customer.phone ?? undefined,
+        stbNumber: customer.stbNumber ?? undefined,
+        planId: customer.planId ?? undefined,
+        installationDate: customer.installationDate ?? undefined,
+        status,
+        restartDate: status === "active" ? todayInBusinessTimezone() : undefined,
+        statusReason: `Manually ${action}d after the service period ended`,
+      });
+      setActionsCustomer(undefined);
+      setStatusCustomer(undefined);
+      setNotice({
+        kind: "success",
+        message: `${customer.name} is now ${status === "active" ? "active" : "inactive"}.`,
+      });
+      refresh(query);
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        message: error instanceof Error ? error.message : `Unable to ${action} customer.`,
       });
     } finally {
       setSubmitting(false);
@@ -1069,7 +1111,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                           <button className="secondary row-action-button" title={`View history for ${customer.name}`} onClick={() => openSummary(customer)}><Clock size={15} aria-hidden="true" /><span>View</span></button>
                           <button className="primary row-action-button" title={canInvoice ? `Add recharge for ${customer.name}` : `Complete setup for ${customer.name}`} onClick={() => canInvoice ? setQuickInvoice(customer) : openEdit(customer)}>{canInvoice ? <FileText size={15} aria-hidden="true" /> : <Pencil size={15} aria-hidden="true" />}<span>{canInvoice ? "Recharge" : "Setup"}</span></button>
                           <button className="secondary row-action-button" title={`Record payment for ${customer.name}`} onClick={() => openPayment(customer)}><Wallet size={15} aria-hidden="true" /><span>Pay</span></button>
-                          <button className="secondary row-action-button" title={`More actions for ${customer.name}`} onClick={() => setActionsCustomer(customer)}><MoreHorizontal size={16} aria-hidden="true" /><span>More</span></button>
+                          <button className="secondary row-action-button" title={`Actions for ${customer.name}`} onClick={() => setActionsCustomer(customer)}><MoreHorizontal size={16} aria-hidden="true" /><span>Actions</span></button>
                         </div>
                       </td>
                     </tr>
@@ -1356,8 +1398,19 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                   Account Control
                   <select name="status" defaultValue={editing.status}>
                     <option value="active">Account Open</option>
-                    <option value="inactive">Account Suspended</option>
+                    <option
+                      value="inactive"
+                      disabled={editing.status === "active" && hasProtectedServicePeriod(editing)}
+                    >
+                      Account Suspended
+                    </option>
                   </select>
+                  {editing.status === "active" && hasProtectedServicePeriod(editing) ? (
+                    <span className="form-help">
+                      This account cannot be deactivated before its billed service ends
+                      {editing.latestPeriodEnd ? ` on ${formatBusinessDate(editing.latestPeriodEnd)}` : ""}.
+                    </span>
+                  ) : null}
                 </label>
                 {editing.status === "inactive" ? (
                   <label>
@@ -1656,6 +1709,38 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
               <Pencil size={16} aria-hidden="true" /> Edit Customer & Account
             </button>
             <button
+              className={
+                hasProtectedServicePeriod(actionsCustomer)
+                  ? "secondary"
+                  : actionsCustomer.status === "active"
+                    ? "danger-button"
+                    : "secondary"
+              }
+              disabled={submitting || hasProtectedServicePeriod(actionsCustomer)}
+              onClick={() => {
+                setStatusCustomer(actionsCustomer);
+                setActionsCustomer(undefined);
+              }}
+            >
+              {hasProtectedServicePeriod(actionsCustomer) ? (
+                <Clock size={16} aria-hidden="true" />
+              ) : actionsCustomer.status === "active" ? (
+                <Archive size={16} aria-hidden="true" />
+              ) : (
+                <RotateCcw size={16} aria-hidden="true" />
+              )}{" "}
+              {hasProtectedServicePeriod(actionsCustomer)
+                ? `Active until ${actionsCustomer.latestPeriodEnd ? formatBusinessDate(actionsCustomer.latestPeriodEnd) : "service ends"}`
+                : actionsCustomer.status === "active"
+                  ? "Deactivate Account"
+                  : "Activate Account"}
+            </button>
+            {hasProtectedServicePeriod(actionsCustomer) ? (
+              <small className="status-change-help">
+                Deactivate becomes available the day after the billed service period ends.
+              </small>
+            ) : null}
+            <button
               className="danger-button"
               onClick={() => {
                 const customer = actionsCustomer;
@@ -1666,6 +1751,42 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
             >
               <Trash2 size={16} aria-hidden="true" /> Archive Customer
             </button>
+          </div>
+        </Modal>
+      ) : null}
+      {statusCustomer ? (
+        <Modal
+          title={statusCustomer.status === "active" ? "Deactivate Account" : "Activate Account"}
+          compact
+          onClose={() => setStatusCustomer(undefined)}
+        >
+          <div className="confirm-content">
+            <h3>{statusCustomer.name}</h3>
+            <p>
+              {statusCustomer.status === "active"
+                ? "The billed service period has ended. Deactivating stops future recharges until an administrator activates this account again."
+                : "Activate this account so the administrator can restart service and add the next recharge."}
+            </p>
+            <div className="modal-actions">
+              <button
+                className="secondary"
+                disabled={submitting}
+                onClick={() => setStatusCustomer(undefined)}
+              >
+                Cancel
+              </button>
+              <button
+                className={statusCustomer.status === "active" ? "danger-button" : "primary"}
+                disabled={submitting}
+                onClick={() => void changeCustomerStatus(statusCustomer)}
+              >
+                {submitting
+                  ? "Saving…"
+                  : statusCustomer.status === "active"
+                    ? "Deactivate Account"
+                    : "Activate Account"}
+              </button>
+            </div>
           </div>
         </Modal>
       ) : null}

@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
-import { DateInputError, parseStrictDate } from '../../src/lib/date.js'
-import { todayInBusinessTimezone } from '../../src/lib/date.js'
+import { addBillingDays, DateInputError, parseStrictDate, todayInBusinessTimezone } from '../../src/lib/date.js'
 import { MAX_MONEY_PAISE } from '../../src/lib/billing.js'
 import { recordAudit } from '../lib/audit.js'
 import { recomputeBillingPosition } from '../lib/coverage.js'
@@ -177,6 +176,13 @@ export default async function handler(request: VercelRequest, response: VercelRe
       await withWriteTransaction(async (transaction) => {
         const current = await transaction.execute({ sql: 'SELECT status, installation_date, next_billing_start_date, plan_id FROM customers WHERE id = ? AND service_type = ? AND is_deleted = 0', args: [input.id, input.serviceType] })
         if (!current.rows[0]) throw new CustomerRequestError(404, 'Customer not found.')
+        if (current.rows[0].status === 'active' && input.status === 'inactive') {
+          const protectedPeriod = await transaction.execute({ sql: 'SELECT period_end AS periodEnd FROM invoices WHERE customer_id = ? AND is_deleted = 0 AND is_merged = 0 AND period_end >= ? ORDER BY period_end DESC LIMIT 1', args: [input.id, todayInBusinessTimezone()] })
+          if (protectedPeriod.rows[0]) {
+            const periodEnd = String(protectedPeriod.rows[0].periodEnd)
+            throw new CustomerRequestError(409, `This customer has billed service through ${periodEnd}. Deactivation is available from ${addBillingDays(periodEnd, 1)}.`)
+          }
+        }
         const area = await transaction.execute({ sql: 'SELECT id FROM areas WHERE id = ? AND service_type = ? AND is_deleted = 0', args: [input.areaId, input.serviceType] })
         if (!area.rows[0]) throw new CustomerRequestError(400, 'Choose an active area for this service.')
         const plan = input.planId ? await transaction.execute({ sql: 'SELECT id, name, price_paise FROM plans WHERE id = ? AND service_type = ? AND (is_active = 1 OR id = (SELECT plan_id FROM customers WHERE id = ?))', args: [input.planId, input.serviceType, input.id] }) : undefined
