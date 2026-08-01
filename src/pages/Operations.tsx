@@ -790,7 +790,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                     <th>Period</th>
                     <th>Balance</th>
                     <th>Status</th>
-                    <th>Actions</th>
+                    <th className="row-actions-column">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -848,22 +848,22 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                           {invoice.isMerged ? "merged" : invoice.status}
                         </Status>
                       </td>
-                      <td data-label="Actions">
+                      <td className="row-actions-column" data-label="Actions">
                         <div className="action-row">
                           <button
-                            className="icon-button"
+                            className="icon-button table-action-button"
                             aria-label={`View ${invoice.invoiceCode}`}
                             onClick={() => void openDetail(invoice)}
                           >
-                            <FileText size={16} aria-hidden="true" />
+                            <FileText size={16} aria-hidden="true" /><span>View</span>
                           </button>
                           {!invoice.isMerged && (
                             <button
-                              className="icon-button danger"
+                              className="icon-button danger table-action-button"
                               aria-label={`Delete ${invoice.invoiceCode}`}
                               onClick={() => void confirmDelete(invoice)}
                             >
-                              <Trash2 size={16} aria-hidden="true" />
+                              <Trash2 size={16} aria-hidden="true" /><span>Delete</span>
                             </button>
                           )}
                         </div>
@@ -1426,7 +1426,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                     <th>Date</th>
                     <th>Received</th>
                     <th>Mode</th>
-                    <th>Actions</th>
+                    <th className="row-actions-column">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1452,22 +1452,22 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                       <td data-label="Mode">
                         {payment.paymentMode.replace("_", " ").toUpperCase()}
                       </td>
-                      <td data-label="Actions">
+                      <td className="row-actions-column" data-label="Actions">
                         <div className="action-row">
                           <button
-                            className="icon-button"
+                            className="icon-button table-action-button"
                             aria-label={`View ${payment.paymentCode}`}
                             onClick={() => void openDetail(payment)}
                           >
-                            <ReceiptText size={16} aria-hidden="true" />
+                            <ReceiptText size={16} aria-hidden="true" /><span>View</span>
                           </button>
                           {payment.paymentMode !== "system_credit" && (
                             <button
-                              className="icon-button danger"
+                              className="icon-button danger table-action-button"
                               aria-label={`Reverse ${payment.paymentCode}`}
                               onClick={() => void confirmReversal(payment)}
                             >
-                              <Trash2 size={16} aria-hidden="true" />
+                              <Trash2 size={16} aria-hidden="true" /><span>Reverse</span>
                             </button>
                           )}
                         </div>

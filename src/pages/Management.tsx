@@ -6,6 +6,7 @@ import {
   Clock,
   Download,
   FileText,
+  MoreHorizontal,
   Network,
   Pencil,
   Plus,
@@ -76,6 +77,17 @@ function formatDueStatus(customer: Customer) {
 }
 function netDue(customer: Customer) {
   return customer.amountDuePaise - customer.creditBalancePaise;
+}
+function canRecharge(customer: Customer) {
+  return (
+    customer.status === "active" &&
+    Boolean(
+      customer.planId &&
+      customer.planIsActive &&
+      customer.installationDate &&
+      customer.nextBillingStartDate,
+    )
+  );
 }
 function accountPosition(customer: Customer) {
   const balance = netDue(customer);
@@ -967,20 +979,12 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                   <th>Plan</th>
                   <th>Service</th>
                   <th>Balance</th>
-                  <th aria-label="Next action">Next Action</th>
+                  <th className="row-actions-column">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredCustomers.map((customer) => {
-                  const canInvoice =
-                    customer.status === "active" &&
-                    Boolean(
-                      customer.planId &&
-                      customer.planIsActive &&
-                      customer.installationDate &&
-                      customer.nextBillingStartDate,
-                    );
-                  const primaryAction = !canInvoice ? "setup" : customer.serviceStatus === "recharge_due" || customer.serviceStatus === "not_billed" ? "recharge" : netDue(customer) > 0 ? "payment" : "recharge";
+                  const canInvoice = canRecharge(customer);
                   return (
                     <tr
                       key={customer.id}
@@ -1060,10 +1064,12 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                           <small>{netDue(customer) > 0 ? formatDueStatus(customer) : netDue(customer) < 0 ? "Customer credit" : "No payment due"}</small>
                         </button>
                       </td>
-                      <td data-label="Next Action">
-                        <div className="action-row customer-actions simplified-actions">
-                          <button className="primary row-primary-action" onClick={() => primaryAction === "setup" ? openEdit(customer) : primaryAction === "payment" ? openPayment(customer) : setQuickInvoice(customer)}>{primaryAction === "setup" ? "Complete Setup" : primaryAction === "payment" ? "Record Payment" : customer.serviceStatus === "active" ? "Add Recharge" : "Recharge"}</button>
-                          <button className="secondary row-more-action" onClick={() => setActionsCustomer(customer)}>More</button>
+                      <td className="row-actions-column" data-label="Actions">
+                        <div className="action-row customer-actions quick-row-actions">
+                          <button className="secondary row-action-button" title={`View history for ${customer.name}`} onClick={() => openSummary(customer)}><Clock size={15} aria-hidden="true" /><span>View</span></button>
+                          <button className="primary row-action-button" title={canInvoice ? `Add recharge for ${customer.name}` : `Complete setup for ${customer.name}`} onClick={() => canInvoice ? setQuickInvoice(customer) : openEdit(customer)}>{canInvoice ? <FileText size={15} aria-hidden="true" /> : <Pencil size={15} aria-hidden="true" />}<span>{canInvoice ? "Recharge" : "Setup"}</span></button>
+                          <button className="secondary row-action-button" title={`Record payment for ${customer.name}`} onClick={() => openPayment(customer)}><Wallet size={15} aria-hidden="true" /><span>Pay</span></button>
+                          <button className="secondary row-action-button" title={`More actions for ${customer.name}`} onClick={() => setActionsCustomer(customer)}><MoreHorizontal size={16} aria-hidden="true" /><span>More</span></button>
                         </div>
                       </td>
                     </tr>
@@ -1595,7 +1601,74 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
           </div>
         </Modal>
       )}
-      {actionsCustomer ? <Modal title={actionsCustomer.name} compact onClose={() => setActionsCustomer(undefined)}><div className="customer-action-menu"><p>Choose an action for {actionsCustomer.customerCode}.</p><button className="secondary" onClick={() => { const customer = actionsCustomer; setActionsCustomer(undefined); openSummary(customer); }}><Clock size={16} aria-hidden="true" /> View History & Statement</button><button className="secondary" disabled={actionsCustomer.status !== "active" || !actionsCustomer.planId || !actionsCustomer.planIsActive || !actionsCustomer.installationDate || !actionsCustomer.nextBillingStartDate} onClick={() => { const customer = actionsCustomer; setActionsCustomer(undefined); setQuickInvoice(customer); }}><FileText size={16} aria-hidden="true" /> Add Recharge</button><button className="secondary" onClick={() => { const customer = actionsCustomer; setActionsCustomer(undefined); openPayment(customer); }}><Wallet size={16} aria-hidden="true" /> Record Payment</button><button className="secondary" onClick={() => { const customer = actionsCustomer; setActionsCustomer(undefined); openEdit(customer); }}><Pencil size={16} aria-hidden="true" /> Edit Customer & Account</button><button className="danger-button" onClick={() => { const customer = actionsCustomer; setActionsCustomer(undefined); setArchiveReason(""); setDeleting(customer); }}><Trash2 size={16} aria-hidden="true" /> Archive Customer</button></div></Modal> : null}
+      {actionsCustomer ? (
+        <Modal
+          title={`${actionsCustomer.name} Actions`}
+          compact
+          onClose={() => setActionsCustomer(undefined)}
+        >
+          <div className="customer-action-menu">
+            <p>Choose an action for {actionsCustomer.customerCode}.</p>
+            <button
+              className="secondary mobile-customer-action"
+              onClick={() => {
+                const customer = actionsCustomer;
+                setActionsCustomer(undefined);
+                openSummary(customer);
+              }}
+            >
+              <Clock size={16} aria-hidden="true" /> View History
+            </button>
+            <button
+              className="primary mobile-customer-action"
+              onClick={() => {
+                const customer = actionsCustomer;
+                setActionsCustomer(undefined);
+                if (canRecharge(customer)) setQuickInvoice(customer);
+                else openEdit(customer);
+              }}
+            >
+              {canRecharge(actionsCustomer) ? (
+                <FileText size={16} aria-hidden="true" />
+              ) : (
+                <Pencil size={16} aria-hidden="true" />
+              )}{" "}
+              {canRecharge(actionsCustomer) ? "Add Recharge" : "Complete Setup"}
+            </button>
+            <button
+              className="secondary mobile-customer-action"
+              onClick={() => {
+                const customer = actionsCustomer;
+                setActionsCustomer(undefined);
+                openPayment(customer);
+              }}
+            >
+              <Wallet size={16} aria-hidden="true" /> Record Payment
+            </button>
+            <button
+              className="secondary"
+              onClick={() => {
+                const customer = actionsCustomer;
+                setActionsCustomer(undefined);
+                openEdit(customer);
+              }}
+            >
+              <Pencil size={16} aria-hidden="true" /> Edit Customer & Account
+            </button>
+            <button
+              className="danger-button"
+              onClick={() => {
+                const customer = actionsCustomer;
+                setActionsCustomer(undefined);
+                setArchiveReason("");
+                setDeleting(customer);
+              }}
+            >
+              <Trash2 size={16} aria-hidden="true" /> Archive Customer
+            </button>
+          </div>
+        </Modal>
+      ) : null}
       {quickInvoice && (
         <Modal
           title="Add Service Recharge"

@@ -654,3 +654,72 @@ body:has(.modal-backdrop),body:has(.command-backdrop) { overflow:hidden; }
   .bulk-picker-heading { align-items:flex-start;flex-direction:column; }
   .bulk-review-list>div { grid-template-columns:1fr;gap:3px; }
 }
+
+/* Compact operations density and one-click row actions. */
+.page-title h1,.page-heading { font-size:clamp(24px,1.8vw,30px); }
+.page-title p { font-size:12px;line-height:18px; }
+.dashboard-page .dashboard-toolbar h2 { font-size:28px;line-height:34px; }
+.dashboard-period { font-size:14px!important;line-height:20px!important; }
+.dashboard-page .metrics article { min-height:112px;padding:15px; }
+.dashboard-page .metrics strong { font-size:24px;letter-spacing:-.04em; }
+.dashboard-page .metrics small { font-size:10px;line-height:15px; }
+.dashboard-page .quick-actions button { min-height:92px;gap:8px; }
+.dashboard-page .quick-actions strong { font-size:12px;letter-spacing:.05em; }
+.filter-grid { gap:8px;margin-top:10px; }
+.filter-grid label,.customer-filter-grid label { font-size:11px;line-height:15px; }
+.customer-filters { padding:14px; }
+.customer-filters .customer-filter-grid { gap:7px; }
+.responsive-register .row-actions-column { position:sticky;right:0;z-index:2;white-space:nowrap;background:var(--card);box-shadow:-8px 0 12px rgb(23 27 36 / .06); }
+.responsive-register th.row-actions-column { z-index:3;background:var(--secondary); }
+.responsive-register tbody tr:hover .row-actions-column { background:var(--primary-soft); }
+.quick-row-actions { min-width:0;gap:4px; }
+.row-action-button,.table-action-button { display:inline-flex;width:auto;min-width:0;align-items:center;justify-content:center;gap:4px;white-space:nowrap; }
+.row-action-button { min-height:34px;padding:5px 7px;border-radius:9px;font-size:10.5px; }
+.table-action-button { min-height:34px;padding:5px 8px;border:1px solid transparent;font-size:11px;font-weight:700; }
+.table-action-button:hover { border-color:var(--border); }
+.mobile-customer-action { display:none; }
+.customer-register .table-wrap table { min-width:1120px; }
+.customer-register .customer-actions { min-width:282px; }
+.customer-register .row-actions-column { min-width:310px;width:310px; }
+.invoice-register .row-actions-column,.payment-register .row-actions-column { min-width:142px;width:142px; }
+
+@media(min-width:901px) {
+  .dashboard-page .dashboard-toolbar { min-height:132px;padding:20px 22px;border-radius:18px; }
+  .dashboard-page .dashboard-range { gap:7px;padding:8px;border-radius:13px; }
+  .dashboard-page .dashboard-range input,.dashboard-page .dashboard-range select,
+  .filter-grid input,.filter-grid select { min-height:40px;padding:7px 9px;border-radius:10px;font-size:13px; }
+  .customer-filters .search-row input,.customer-filters .search-row>.secondary,
+  .customer-filter-grid select,.customer-filter-grid .due-toggle { min-height:40px; }
+  .customer-register .table-wrap table { min-width:100%; }
+}
+
+@media(max-width:900px) {
+  .page-title h1,.page-heading { font-size:26px;line-height:32px; }
+  .dashboard-page .dashboard-toolbar { padding:18px;border-radius:18px; }
+  .dashboard-page .dashboard-toolbar h2 { font-size:27px;line-height:32px; }
+  .dashboard-page .quick-actions button { min-height:84px; }
+  .customer-register .table-wrap table { min-width:1000px; }
+  .customer-register .customer-actions { min-width:188px; }
+  .customer-register .row-actions-column { min-width:208px;width:208px; }
+  .invoice-register .row-actions-column,.payment-register .row-actions-column { min-width:142px;width:142px; }
+  .quick-row-actions { min-width:0;justify-content:flex-start; }
+  .row-action-button { width:44px;height:44px;min-width:44px;padding:0; }
+  .row-action-button span { position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0; }
+  .table-action-button { min-height:44px;padding:7px 10px; }
+}
+
+@media(max-width:620px) {
+  .page-title h1,.page-heading { font-size:24px;line-height:29px; }
+  .page-title p { font-size:12px;line-height:18px; }
+  .dashboard-page .dashboard-toolbar h2 { font-size:25px;line-height:30px; }
+  .dashboard-page .metrics article { min-height:104px; }
+  .dashboard-page .metrics strong { font-size:22px; }
+  .customer-filters { padding:12px; }
+  .customer-register .table-wrap table { min-width:920px; }
+  .customer-register .subscriber-number-column,
+  .customer-register .entity-cell>i { display:none; }
+  .customer-register .customer-actions { min-width:44px; }
+  .customer-register .customer-actions .row-action-button:nth-child(-n+3) { display:none; }
+  .customer-register .row-actions-column { min-width:62px;width:62px; }
+  .mobile-customer-action { display:inline-flex; }
+}
