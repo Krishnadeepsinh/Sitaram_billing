@@ -916,6 +916,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
           onClose={() => setBillingDialog(undefined)}
         >
           <form className="modal-form single-column" onSubmit={submitBulk}>
+            <div className="modal-form-body">
             <label>
               Bill Complete Cycles Through *
               <input
@@ -962,6 +963,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                 ? "Only active subscribers due today or earlier are selected. Future billing dates are excluded. Existing periods and incomplete cycles are skipped safely."
                 : "Leave every customer unchecked to bill all eligible customers. Existing periods and incomplete cycles are skipped safely."}
             </p>
+            </div>
             <div className="modal-actions">
               <button
                 type="button"
@@ -1495,6 +1497,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
       {paymentOpen && (
         <Modal title="Record Payment" onClose={() => setPaymentOpen(false)}>
           <form className="modal-form single-column" onSubmit={submit}>
+            <div className="modal-form-body">
             <label>
               Customer *
               <select
@@ -1586,6 +1589,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
               Notes
               <input name="notes" maxLength={500} />
             </label>
+            </div>
             <div className="modal-actions">
               <button
                 type="button"
@@ -1857,6 +1861,7 @@ export function ExpensesPage() {
       {expenseOpen && (
         <Modal title="Add Expense" onClose={() => setExpenseOpen(false)}>
           <form className="modal-form single-column" onSubmit={submit}>
+            <div className="modal-form-body">
             <label>
               Description *
               <input
@@ -1905,6 +1910,7 @@ export function ExpensesPage() {
                   required
                 />
               </label>
+            </div>
             </div>
             <div className="modal-actions">
               <button
@@ -2693,7 +2699,7 @@ function PaymentDetailView({ payment }: { payment: PaymentDetail }) {
   );
 }
 function PdfPreviewModal({ title, url, onClose }: { title: string; url: string; onClose: () => void }) {
-  return <Modal title={title} onClose={onClose}><iframe className="pdf-preview-frame" title={title} src={url} /></Modal>
+  return <Modal title={title} onClose={onClose} wide><iframe className="pdf-preview-frame" title={title} src={url} /></Modal>
 }
 
 function Detail({ label, value }: { label: string; value: string }) {

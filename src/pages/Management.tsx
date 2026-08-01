@@ -306,6 +306,7 @@ export function PlansPage({ serviceType }: { serviceType: ServiceType }) {
             key={editing?.id ?? "new"}
             onSubmit={submit}
           >
+            <div className="modal-form-body">
             <label className="full-field">
               Plan Name
               <input
@@ -355,6 +356,7 @@ export function PlansPage({ serviceType }: { serviceType: ServiceType }) {
                 Available for new customers
               </label>
             )}
+            </div>
             <div className="modal-actions full-field">
               <button
                 type="button"
@@ -1389,6 +1391,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
             key={editing?.id ?? "new"}
             onSubmit={saveCustomer}
           >
+            <div className="modal-form-body">
             <label>
               Name *
               <input
@@ -1513,6 +1516,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 <NoticeMessage notice={notice} />
               </div>
             ) : null}
+            </div>
             <div className="modal-actions full-field">
               <button
                 type="button"
@@ -1736,6 +1740,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
           onClose={() => setQuickPayment(undefined)}
         >
           <form className="modal-form" onSubmit={collectQuickPayment}>
+            <div className="modal-form-body">
             <div className="quick-action-context full-field">
               <Wallet size={18} />
               <span>
@@ -1805,6 +1810,7 @@ export function CustomersPage({ serviceType }: { serviceType: ServiceType }) {
                 placeholder="Optional collection note…"
               />
             </label>
+            </div>
             <div className="modal-actions full-field">
               <button
                 type="button"

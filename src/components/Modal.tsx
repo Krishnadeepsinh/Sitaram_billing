@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 
 const focusableSelector =
   'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, a[href], [tabindex]:not([tabindex="-1"])';
+const nativePopupInputTypes = new Set(["date", "month", "time", "datetime-local"]);
 
 export function Modal({
   title,
@@ -19,6 +20,7 @@ export function Modal({
   compact?: boolean;
   children: ReactNode;
 }) {
+  const backdrop = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLElement>(null);
   const titleId = useId();
   const focusable = () =>
@@ -28,14 +30,35 @@ export function Modal({
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
+    const coveredDialogs = [...document.querySelectorAll<HTMLElement>(".modal-backdrop")]
+      .filter((item) => item !== backdrop.current)
+      .map((item) => ({
+        item,
+        inert: item.inert,
+        ariaHidden: item.getAttribute("aria-hidden"),
+      }));
+    coveredDialogs.forEach(({ item }) => {
+      item.inert = true;
+      item.setAttribute("aria-hidden", "true");
+    });
     focusable()[0]?.focus();
     return () => {
+      coveredDialogs.forEach(({ item, inert, ariaHidden }) => {
+        item.inert = inert;
+        if (ariaHidden === null) item.removeAttribute("aria-hidden");
+        else item.setAttribute("aria-hidden", ariaHidden);
+      });
       if (previous && document.contains(previous)) previous.focus();
     };
   }, []);
 
   function handleKey(event: KeyboardEvent<HTMLElement>) {
     if (event.key === "Escape") {
+      const target = event.target;
+      if (
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLInputElement && nativePopupInputTypes.has(target.type))
+      ) return;
       onClose();
       return;
     }
@@ -55,11 +78,9 @@ export function Modal({
 
   return createPortal(
     <div
+      ref={backdrop}
       className="modal-backdrop"
       role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
     >
       <section
         ref={dialog}
