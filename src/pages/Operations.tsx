@@ -100,12 +100,14 @@ function lastBackupLabel(value: string | null) { return value ? `Last downloaded
 export function DashboardPage({
   serviceType,
   onNavigate,
+  onOpenSearch,
 }: {
   serviceType: ServiceType;
   onNavigate: (
     page: "Subscribers" | "Invoices" | "Payments" | "Reports",
     params?: Record<string, string>,
   ) => void;
+  onOpenSearch: () => void;
 }) {
   const [report, setReport] = useState<Report>();
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -148,7 +150,7 @@ export function DashboardPage({
       <h1 className="sr-only">Today</h1>
       <section className="dashboard-toolbar">
         <div>
-          <p className="eyebrow">Daily work</p>
+          <p className="eyebrow">Good morning, Admin</p>
           <h2>Today</h2>
           <p className="dashboard-period">{formatBusinessDate(range.from)} → {formatBusinessDate(range.to)}</p>
           <div className="dashboard-context" aria-label="Workspace status">
@@ -159,8 +161,14 @@ export function DashboardPage({
                 : "Billing setup complete"}
             </span>
           </div>
+          <button className="dashboard-subscriber-search" onClick={onOpenSearch}>
+            <Search size={18} aria-hidden="true" />
+            <span>Find subscriber, phone or STB</span>
+          </button>
         </div>
-        <div className="dashboard-range">
+        <details className="dashboard-filters" open>
+          <summary>Period &amp; area</summary>
+          <div className="dashboard-range">
           <label>
             From
             <input
@@ -211,7 +219,8 @@ export function DashboardPage({
           <button className="primary" onClick={() => onNavigate("Invoices")}>
             <FilePlus2 size={17} aria-hidden="true" /> Add Recharge
           </button>
-        </div>
+          </div>
+        </details>
       </section>
       <section className="panel today-action-centre" aria-labelledby="today-work-title">
         <div className="panel-heading today-action-heading"><div><p className="eyebrow">Start here</p><h2 id="today-work-title">Work to Do</h2><small>Each customer shows the most important next action.</small></div><div className="attention-counts" aria-label="Work counts"><span><strong>{rechargeDueCount}</strong> Recharge Due</span><span><strong>{paymentDueCount}</strong> Payment Due</span><span><strong>{setupCount}</strong> Setup Problems</span></div></div>
@@ -249,26 +258,26 @@ export function DashboardPage({
         />
       </section>
       <section className="quick-actions" aria-label="Quick actions">
+        <button onClick={() => onNavigate("Invoices")}>
+          <span>
+            <FileText />
+          </span>
+          <strong>Recharge</strong>
+          <small>Add a service recharge</small>
+        </button>
         <button onClick={() => onNavigate("Payments")}>
           <span>
             <ReceiptText />
           </span>
-          <strong>New payment</strong>
+          <strong>Record payment</strong>
           <small>Record a collection</small>
         </button>
         <button onClick={() => onNavigate("Subscribers")}>
           <span>
             <UserPlus />
           </span>
-          <strong>Add customer</strong>
-          <small>Create a customer record</small>
-        </button>
-        <button onClick={() => onNavigate("Invoices")}>
-          <span>
-            <FileText />
-          </span>
-          <strong>Recharges</strong>
-          <small>Add and review service bills</small>
+          <strong>Add subscriber</strong>
+          <small>Create a subscriber record</small>
         </button>
         <button onClick={() => onNavigate("Reports")}>
           <span>
@@ -1611,7 +1620,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                 holdAsCredit={customer.unbilledOpeningDuePaise > 0}
               />
             ) : null}
-            <details className="advanced-options"><summary>Payment Date & Notes</summary><label>Payment Date<input name="paymentDate" type="date" max={today} defaultValue={today} required /></label><label>Notes<input name="notes" autoComplete="off" maxLength={500} placeholder="Optional collection note…" /></label></details>
+            <details className="advanced-options" open><summary>Payment Date & Notes</summary><label>Payment Date<input name="paymentDate" type="date" max={today} defaultValue={today} required /></label><label>Notes<input name="notes" autoComplete="off" maxLength={500} placeholder="Optional collection note…" /></label></details>
             </div>
             <div className="modal-actions">
               <button

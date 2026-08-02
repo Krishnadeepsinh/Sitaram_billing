@@ -713,6 +713,22 @@ body:has(.modal-backdrop),body:has(.command-backdrop) { overflow:hidden; }
   .mobile-customer-action { display:inline-flex; }
 }
 
+/* Final mobile operations layout: keep the three daily actions equally visible. */
+@media(max-width:620px) {
+  .dashboard-page .quick-actions { grid-template-columns:repeat(3,minmax(0,1fr));gap:8px; }
+  .dashboard-page .quick-actions button { min-height:92px;padding:10px 5px; }
+}
+
+@media(max-width:360px) {
+  .dashboard-page .quick-actions { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .dashboard-page .quick-actions button { min-height:86px;padding-inline:3px; }
+  .dashboard-filters>.dashboard-range { grid-template-columns:1fr!important; }
+  .dashboard-filters .dashboard-range label,
+  .dashboard-filters .dashboard-range label:nth-child(3),
+  .dashboard-filters .dashboard-range button { grid-column:1; }
+  .dashboard-filters .dashboard-range input[type='date'] { padding-inline:10px;font-size:14px!important; }
+}
+
 @media(max-width:620px) {
   .page-title h1,.page-heading { font-size:24px;line-height:29px; }
   .page-title p { font-size:12px;line-height:18px; }

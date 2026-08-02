@@ -3,6 +3,7 @@ import type { FormEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   Archive,
+  ChevronRight,
   Clock,
   Download,
   FileText,
@@ -61,6 +62,7 @@ import type {
 import { InvoiceForm } from "../components/InvoiceForm";
 import { downloadCsv } from "../lib/csv";
 import { customerDueLabel, duePlanPeriodLabel } from "../lib/billing";
+import { useDebouncedValue } from "../lib/hooks";
 
 type Notice = { kind: "success" | "error"; message: string } | undefined;
 const documents = () => import("../lib/documents");
@@ -407,6 +409,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
   const [archivedCustomers, setArchivedCustomers] = useState<Customer[]>([]);
   const [archivedLoading, setArchivedLoading] = useState(false);
   const [query, setQuery] = useState(initialQuery);
+  const deferredQuery = useDebouncedValue(query, 240);
   const [statusFilter, setStatusFilter] = useState<"all" | Customer["status"]>(
     "all",
   );
@@ -496,8 +499,6 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
       .finally(() => setArchivedLoading(false));
   }, [serviceType]);
   const previousService = useRef<ServiceType | undefined>(undefined);
-  const queryRef = useRef(query);
-  queryRef.current = query;
   useEffect(() => {
     if (!financialPopover) return;
     const previous = document.activeElement as HTMLElement | null;
@@ -517,8 +518,8 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
       setSelectedCustomerIds(new Set());
     }
     setCustomerOffset(0);
-    refresh(serviceChanged ? initialQuery : queryRef.current, 0);
-  }, [initialQuery, refresh, serviceType]);
+    refresh(serviceChanged ? initialQuery : deferredQuery, 0);
+  }, [deferredQuery, initialQuery, refresh, serviceType]);
 
   const filteredCustomers = useMemo(() => customers, [customers]);
   const allShownSelected =
@@ -896,8 +897,8 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
   return (
     <section className="page-content">
       <PageTitle
-        title="Customers"
-        subtitle="See service, balance, and the next action for every customer."
+        title="Subscribers"
+        subtitle="Find a subscriber and complete the next action quickly."
         action={
           <div className="page-actions subscriber-page-actions">
             <button className="secondary" onClick={exportSubscribers}>
@@ -910,7 +911,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
               <Archive size={16} /> Archived{archivedCustomers.length ? ` (${archivedCustomers.length})` : ""}
             </button>
             <button className="primary" onClick={openAdd}>
-              <Plus size={16} /> Add Customer
+              <Plus size={16} /> Add Subscriber
             </button>
           </div>
         }
@@ -993,7 +994,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
       </article>
       <article className="panel table-panel responsive-register register-panel customer-register">
         <div className="register-heading">
-          <h2>Customer List</h2>
+          <h2>Subscribers</h2>
           <span>
             {selectedCustomerIds.size
               ? `${selectedCustomerIds.size} selected`
@@ -1003,7 +1004,39 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
         {loading ? (
           <p className="empty-inline" role="status">Loading customers…</p>
         ) : filteredCustomers.length ? (
-          <div className="table-wrap">
+          <>
+          <div className="mobile-subscriber-list" role="list">
+            {filteredCustomers.map((customer) => {
+              const canInvoice = canRecharge(customer);
+              const paymentDue = netDue(customer) > 0;
+              return (
+                <article className="mobile-subscriber-row" role="listitem" key={`mobile-${customer.id}`}>
+                  <button className="mobile-subscriber-main" onClick={() => openSummary(customer)} aria-label={`Open ${customer.name}`}>
+                    <i className="avatar" aria-hidden="true">{customer.name.slice(0, 1).toUpperCase()}</i>
+                    <span className="mobile-subscriber-copy">
+                      <strong>{customer.name}</strong>
+                      <small>{customer.customerCode}{customer.phone ? ` · ${customer.phone}` : customer.stbNumber ? ` · STB ${customer.stbNumber}` : ""}</small>
+                      <small>{customer.areaName} · {customer.planName || "Plan missing"}</small>
+                    </span>
+                    <span className="mobile-subscriber-balance">
+                      <strong className={paymentDue ? "amount-due" : netDue(customer) < 0 ? "amount-credit" : ""}>{accountPosition(customer)}</strong>
+                      <small className={`mobile-status-pill ${customer.status}`}>{customer.status === "active" ? "Active" : "Inactive"}</small>
+                    </span>
+                    <ChevronRight size={18} aria-hidden="true" />
+                  </button>
+                  <div className="mobile-subscriber-actions">
+                    <span>{coverageLabel(customer)}</span>
+                    <button className={paymentDue || canInvoice ? "primary" : "secondary"} onClick={() => paymentDue ? openPayment(customer) : canInvoice ? setQuickInvoice(customer) : openEdit(customer)}>
+                      {paymentDue ? <Wallet size={15} aria-hidden="true" /> : canInvoice ? <FileText size={15} aria-hidden="true" /> : <Pencil size={15} aria-hidden="true" />}
+                      {paymentDue ? "Pay" : canInvoice ? "Recharge" : "Setup"}
+                    </button>
+                    <button className="secondary mobile-more-action" onClick={() => setActionsCustomer(customer)} aria-label={`More actions for ${customer.name}`}><MoreHorizontal size={16} aria-hidden="true" /></button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <div className="table-wrap desktop-subscriber-table">
             <table>
               <thead>
                 <tr>
@@ -1120,6 +1153,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
               </tbody>
             </table>
           </div>
+          </>
       ) : (
           <Empty
             label="No customers found"
@@ -1262,7 +1296,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
 
       {formOpen && (
         <Modal
-          title={editing ? `Edit ${editing.customerCode}` : "Add Customer"}
+          title={editing ? `Edit ${editing.customerCode}` : "Add Subscriber"}
           wide
           compact
           onClose={() => {
@@ -1270,26 +1304,28 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
             setEditing(undefined);
           }}
         >
-          <form
-            className="inline-form area-form"
-            key={editingArea?.id ?? "new-area"}
-            onSubmit={saveArea}
-          >
-            <input
-              name="area"
-              autoComplete="off"
-              required
-              maxLength={120}
-              defaultValue={editingArea?.displayName}
-              aria-label={editingArea ? "Area name" : "New area name"}
-              placeholder="Add a new area…"
-            />
-            <button type="submit" className="secondary">
-              {editingArea ? "Update" : "Add Area"}
-            </button>
-          </form>
-          {areas.length > 0 && (
-            <div className="area-chips" aria-label="Service areas">
+          <details className="area-manager">
+            <summary>Manage service areas</summary>
+            <form
+              className="inline-form area-form"
+              key={editingArea?.id ?? "new-area"}
+              onSubmit={saveArea}
+            >
+              <input
+                name="area"
+                autoComplete="off"
+                required
+                maxLength={120}
+                defaultValue={editingArea?.displayName}
+                aria-label={editingArea ? "Area name" : "New area name"}
+                placeholder="Add a new area…"
+              />
+              <button type="submit" className="secondary">
+                {editingArea ? "Update" : "Add Area"}
+              </button>
+            </form>
+            {areas.length > 0 && (
+              <div className="area-chips" aria-label="Service areas">
               {areas.map((area) => (
                 <span key={area.id}>
                   {area.displayName}
@@ -1314,8 +1350,9 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                   </button>
                 </span>
               ))}
-            </div>
-          )}
+              </div>
+            )}
+          </details>
           <form
             className="modal-form customer-form"
             key={editing?.id ?? "new"}
@@ -1478,8 +1515,8 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                 {submitting
                   ? "Saving…"
                   : editing
-                    ? "Update Customer"
-                    : "Add Customer"}
+                    ? "Update Subscriber"
+                    : "Add Subscriber"}
               </button>
             </div>
           </form>
@@ -1871,7 +1908,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                 required
               />
             </label> : null}
-            <details className="advanced-options full-field"><summary>Payment Date & Notes</summary><label>Payment Date<input name="paymentDate" type="date" max={todayInBusinessTimezone()} defaultValue={todayInBusinessTimezone()} required /></label><label>Notes<input name="notes" autoComplete="off" maxLength={500} placeholder="Optional collection note…" /></label></details>
+            <details className="advanced-options full-field" open><summary>Payment Date & Notes</summary><label>Payment Date<input name="paymentDate" type="date" max={todayInBusinessTimezone()} defaultValue={todayInBusinessTimezone()} required /></label><label>Notes<input name="notes" autoComplete="off" maxLength={500} placeholder="Optional collection note…" /></label></details>
             </div>
             <div className="modal-actions full-field">
               <button
