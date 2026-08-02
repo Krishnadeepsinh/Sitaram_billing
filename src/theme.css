@@ -556,9 +556,9 @@ body:has(.modal-backdrop),body:has(.command-backdrop) { overflow:hidden; }
 .recharge-length>div small { margin-top:1px;color:var(--muted);font-size:10px; }
 .recharge-length>label { display:grid;margin-top:11px; }
 .recharge-length>label input { margin-top:5px; }
-.recharge-start { display:grid;grid-template-columns:1fr 1fr;gap:8px; }
-.recharge-start>span { display:grid;gap:2px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase; }
-.recharge-start strong { color:var(--text);font-size:13px;line-height:19px;text-transform:none; }
+.billing-date-fields { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+.billing-date-fields>.recharge-end { grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-size:11px;font-weight:800; }
+.billing-date-fields>.recharge-end strong { color:var(--text);font-size:13px; }
 .recharge-preview { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;padding:0;overflow:hidden; }
 .recharge-preview>div { display:grid;gap:2px;padding:10px 12px;border-right:1px solid var(--border);border-bottom:1px solid var(--border); }
 .recharge-preview>div:nth-child(2n) { border-right:0; }
@@ -647,7 +647,7 @@ body:has(.modal-backdrop),body:has(.command-backdrop) { overflow:hidden; }
   .attention-list button,.attention-state { grid-column:1;grid-row:auto;width:100%; }
   .workflow-intro { align-items:flex-start;flex-wrap:wrap; }
   .workflow-intro .text-button { width:100%;margin-left:47px;justify-content:flex-start; }
-  .restart-choice>div,.recharge-length>div,.recharge-start,.recharge-preview { grid-template-columns:1fr; }
+  .restart-choice>div,.recharge-length>div,.billing-date-fields,.recharge-preview { grid-template-columns:1fr; }
   .recharge-preview>div { border-right:0; }
   .payment-settlement-heading { align-items:stretch;flex-direction:column; }
   .payment-settle-button { width:100%; }

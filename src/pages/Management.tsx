@@ -1385,12 +1385,16 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
               </select>
             </label>
             <label>
-              Installation Date
+              Service Start Date
               <input
                 name="installationDate"
                 type="date"
                 defaultValue={editing?.installationDate ?? ""}
               />
+              <span className="form-help">
+                The first day this customer received service. Existing bills protect
+                this date from moving after billed service.
+              </span>
             </label>
             {editing ? (
               <>
