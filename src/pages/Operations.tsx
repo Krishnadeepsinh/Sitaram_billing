@@ -230,11 +230,10 @@ export function DashboardPage({
           </div>
         </details>
       </section>
-      <section className="panel today-action-centre" aria-labelledby="today-work-title">
-        <div className="panel-heading today-action-heading"><div><p className="eyebrow">Start here</p><h2 id="today-work-title">Work to Do</h2><small>Each customer shows the most important next action.</small></div><div className="attention-counts" aria-label="Work counts"><span><CircleAlert size={18} aria-hidden="true" /><strong>{paymentDueCount}</strong><small>Payments Due</small></span><span><Clock3 size={18} aria-hidden="true" /><strong>{rechargeDueCount}</strong><small>Recharge Due</small></span><span><Settings2 size={18} aria-hidden="true" /><strong>{setupCount}</strong><small>Setup Needed</small></span></div></div>
-        {attentionItems.length ? <div className="attention-list" role="list">{attentionItems.map(({ customer, action, actionLabel, reason }) => <div role="listitem" key={customer.id}><span className="attention-customer"><strong>{customer.name}</strong><small>{customer.customerCode} · {customer.planName || customer.areaName}</small></span><span className={`attention-state ${action}`}>{reason}</span><button className={action === "recharge" ? "primary" : "secondary"} onClick={() => onNavigate("Subscribers", { query: customer.customerCode, action })}>{actionLabel}</button></div>)}</div> : <div className="today-clear"><CheckCircle2 size={22} aria-hidden="true" /><span><strong>Daily work is clear</strong><small>No recharge, payment, or setup action is waiting.</small></span></div>}
-        {scopedCustomers.length > attentionItems.length && attentionItems.length >= 12 ? <button className="text-button today-view-all" onClick={() => onNavigate("Subscribers")}>View all customers</button> : null}
-      </section>
+      <div className="mobile-dashboard-section-heading mobile-revenue-heading">
+        <h2>Revenue &amp; balances</h2>
+        <button className="text-button" onClick={() => onNavigate("Reports")}>View reports</button>
+      </div>
       <section className="metrics dashboard-metrics" aria-label="Business statistics">
         <Metric
           icon={<TrendingUp />}
@@ -265,6 +264,9 @@ export function DashboardPage({
           hint="Action required"
         />
       </section>
+      <div className="mobile-dashboard-section-heading mobile-actions-heading">
+        <h2>Quick actions</h2>
+      </div>
       <section className="quick-actions" aria-label="Quick actions">
         <button onClick={() => onNavigate("Invoices")}>
           <span>
@@ -294,6 +296,11 @@ export function DashboardPage({
           <strong>Reports</strong>
           <small>Review ledgers & trends</small>
         </button>
+      </section>
+      <section className="panel today-action-centre" aria-labelledby="today-work-title">
+        <div className="panel-heading today-action-heading"><div><p className="eyebrow">Start here</p><h2 id="today-work-title">Needs attention</h2><small>Each customer shows the most important next action.</small></div><div className="attention-counts" aria-label="Work counts"><span><CircleAlert size={18} aria-hidden="true" /><strong>{paymentDueCount}</strong><small>Payments Due</small></span><span><Clock3 size={18} aria-hidden="true" /><strong>{rechargeDueCount}</strong><small>Recharge Due</small></span><span><Settings2 size={18} aria-hidden="true" /><strong>{setupCount}</strong><small>Setup Needed</small></span></div></div>
+        {attentionItems.length ? <div className="attention-list" role="list">{attentionItems.map(({ customer, action, actionLabel, reason }) => <div role="listitem" key={customer.id}><span className="attention-customer"><strong>{customer.name}</strong><small>{customer.customerCode} · {customer.planName || customer.areaName}</small></span><span className={`attention-state ${action}`}>{reason}</span><button className={action === "recharge" ? "primary" : "secondary"} onClick={() => onNavigate("Subscribers", { query: customer.customerCode, action })}>{actionLabel}</button></div>)}</div> : <div className="today-clear"><CheckCircle2 size={22} aria-hidden="true" /><span><strong>Daily work is clear</strong><small>No recharge, payment, or setup action is waiting.</small></span></div>}
+        {scopedCustomers.length > attentionItems.length && attentionItems.length >= 12 ? <button className="text-button today-view-all" onClick={() => onNavigate("Subscribers")}>View all customers</button> : null}
       </section>
       <section className="mobile-recent-subscribers" aria-labelledby="recent-subscribers-title">
         <header><h2 id="recent-subscribers-title">Recent subscribers</h2><button className="text-button" onClick={() => onNavigate("Subscribers")}>View all</button></header>
