@@ -7,17 +7,24 @@ import {
 import type { FormEvent, ReactNode } from "react";
 import {
   Banknote,
+  Bell,
   CalendarDays,
   CheckCircle2,
+  ChevronRight,
+  CircleAlert,
+  Clock3,
+  CreditCard,
   Download,
   Eye,
   FilePlus2,
   FileText,
   HardDriveDownload,
+  IndianRupee,
   MessageCircle,
   Merge,
   ReceiptText,
   Search,
+  Settings2,
   Share2,
   TrendingUp,
   Trash2,
@@ -104,7 +111,7 @@ export function DashboardPage({
 }: {
   serviceType: ServiceType;
   onNavigate: (
-    page: "Subscribers" | "Invoices" | "Payments" | "Reports",
+    page: "Subscribers" | "Invoices" | "Payments" | "Reports" | "Reminders",
     params?: Record<string, string>,
   ) => void;
   onOpenSearch: () => void;
@@ -151,6 +158,7 @@ export function DashboardPage({
       <section className="dashboard-toolbar">
         <div>
           <p className="eyebrow">Good morning, Admin</p>
+          <button className="mobile-dashboard-alert" aria-label="Open reminders" onClick={() => onNavigate("Reminders")}><Bell size={20} aria-hidden="true" /></button>
           <h2>Today</h2>
           <p className="dashboard-period">{formatBusinessDate(range.from)} → {formatBusinessDate(range.to)}</p>
           <div className="dashboard-context" aria-label="Workspace status">
@@ -223,7 +231,7 @@ export function DashboardPage({
         </details>
       </section>
       <section className="panel today-action-centre" aria-labelledby="today-work-title">
-        <div className="panel-heading today-action-heading"><div><p className="eyebrow">Start here</p><h2 id="today-work-title">Work to Do</h2><small>Each customer shows the most important next action.</small></div><div className="attention-counts" aria-label="Work counts"><span><strong>{rechargeDueCount}</strong> Recharge Due</span><span><strong>{paymentDueCount}</strong> Payment Due</span><span><strong>{setupCount}</strong> Setup Problems</span></div></div>
+        <div className="panel-heading today-action-heading"><div><p className="eyebrow">Start here</p><h2 id="today-work-title">Work to Do</h2><small>Each customer shows the most important next action.</small></div><div className="attention-counts" aria-label="Work counts"><span><CircleAlert size={18} aria-hidden="true" /><strong>{paymentDueCount}</strong><small>Payments Due</small></span><span><Clock3 size={18} aria-hidden="true" /><strong>{rechargeDueCount}</strong><small>Recharge Due</small></span><span><Settings2 size={18} aria-hidden="true" /><strong>{setupCount}</strong><small>Setup Needed</small></span></div></div>
         {attentionItems.length ? <div className="attention-list" role="list">{attentionItems.map(({ customer, action, actionLabel, reason }) => <div role="listitem" key={customer.id}><span className="attention-customer"><strong>{customer.name}</strong><small>{customer.customerCode} · {customer.planName || customer.areaName}</small></span><span className={`attention-state ${action}`}>{reason}</span><button className={action === "recharge" ? "primary" : "secondary"} onClick={() => onNavigate("Subscribers", { query: customer.customerCode, action })}>{actionLabel}</button></div>)}</div> : <div className="today-clear"><CheckCircle2 size={22} aria-hidden="true" /><span><strong>Daily work is clear</strong><small>No recharge, payment, or setup action is waiting.</small></span></div>}
         {scopedCustomers.length > attentionItems.length && attentionItems.length >= 12 ? <button className="text-button today-view-all" onClick={() => onNavigate("Subscribers")}>View all customers</button> : null}
       </section>
@@ -260,19 +268,19 @@ export function DashboardPage({
       <section className="quick-actions" aria-label="Quick actions">
         <button onClick={() => onNavigate("Invoices")}>
           <span>
-            <FileText />
+            <IndianRupee />
           </span>
           <strong>Recharge</strong>
           <small>Add a service recharge</small>
         </button>
         <button onClick={() => onNavigate("Payments")}>
           <span>
-            <ReceiptText />
+            <CreditCard />
           </span>
           <strong>Record payment</strong>
           <small>Record a collection</small>
         </button>
-        <button onClick={() => onNavigate("Subscribers")}>
+        <button onClick={() => onNavigate("Subscribers", { action: "add" })}>
           <span>
             <UserPlus />
           </span>
@@ -286,6 +294,20 @@ export function DashboardPage({
           <strong>Reports</strong>
           <small>Review ledgers & trends</small>
         </button>
+      </section>
+      <section className="mobile-recent-subscribers" aria-labelledby="recent-subscribers-title">
+        <header><h2 id="recent-subscribers-title">Recent subscribers</h2><button className="text-button" onClick={() => onNavigate("Subscribers")}>View all</button></header>
+        <div>
+          {scopedCustomers.slice(0, 5).map((customer) => {
+            const balance = customer.amountDuePaise - customer.creditBalancePaise;
+            return <button key={customer.id} onClick={() => onNavigate("Subscribers", { query: customer.customerCode, action: "view" })}>
+              <i className="avatar" aria-hidden="true">{customer.name.slice(0, 1).toUpperCase()}</i>
+              <span><strong>{customer.name}</strong><small>{customer.customerCode}{customer.phone ? ` · ${customer.phone}` : ""}</small><small>{customer.areaName} · {customer.planName || "Plan missing"}</small></span>
+              <span className="recent-subscriber-state"><strong className={balance > 0 ? "amount-due" : balance < 0 ? "amount-credit" : ""}>{formatRupees(Math.abs(balance))}{balance > 0 ? " due" : ""}</strong><small className={`mobile-status-pill ${balance > 0 ? "due" : customer.status}`}>{balance > 0 ? "Due" : customer.status === "active" ? "Active" : "Inactive"}</small></span>
+              <ChevronRight size={18} aria-hidden="true" />
+            </button>;
+          })}
+        </div>
       </section>
       <section className="dashboard-grid">
         <article className="panel">

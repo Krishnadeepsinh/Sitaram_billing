@@ -13,6 +13,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   Trash2,
   Users,
   Wallet,
@@ -416,6 +417,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
   const [areaFilter, setAreaFilter] = useState("all");
   const [planFilter, setPlanFilter] = useState("all");
   const [dueOnly, setDueOnly] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [customerOffset, setCustomerOffset] = useState(0);
   const [customerTotal, setCustomerTotal] = useState(0);
   const customerPageSize = 100;
@@ -842,6 +844,13 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
       .finally(() => setSummaryLoading(false));
   }, [serviceType]);
   useEffect(() => {
+    if (routeActionHandled.current || initialAction !== "add") return;
+    routeActionHandled.current = true;
+    setNotice(undefined);
+    setEditing(undefined);
+    setFormOpen(true);
+  }, [initialAction]);
+  useEffect(() => {
     if (routeActionHandled.current || loading || !initialQuery || !customers.length) return;
     const customer = customers.find((item) => item.customerCode === initialQuery) ?? customers[0];
     if (!customer) return;
@@ -917,7 +926,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
         }
       />
       {notice && <NoticeMessage notice={notice} />}
-      <article className="panel customer-filters">
+      <article className={`panel customer-filters${mobileFiltersOpen ? " mobile-filters-open" : ""}`}>
         <div className="search-row">
           <Search size={17} />
           <input
@@ -934,7 +943,15 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
           <button className="secondary" onClick={() => { setCustomerOffset(0); refresh(query, 0); }}>
             Search
           </button>
+          <button className="secondary mobile-filter-toggle" aria-label={mobileFiltersOpen ? "Hide subscriber filters" : "Show subscriber filters"} aria-expanded={mobileFiltersOpen} onClick={() => setMobileFiltersOpen((open) => !open)}>
+            <SlidersHorizontal size={18} aria-hidden="true" />
+          </button>
         </div>
+        <nav className="mobile-subscriber-tabs" aria-label="Subscriber filters">
+          <button className={!dueOnly && statusFilter === "all" ? "active" : ""} aria-pressed={!dueOnly && statusFilter === "all"} onClick={() => { setDueOnly(false); setStatusFilter("all"); }}>All</button>
+          <button className={dueOnly ? "active" : ""} aria-pressed={dueOnly} onClick={() => { setDueOnly(true); setStatusFilter("all"); }}>Due</button>
+          <button className={!dueOnly && statusFilter === "inactive" ? "active" : ""} aria-pressed={!dueOnly && statusFilter === "inactive"} onClick={() => { setDueOnly(false); setStatusFilter("inactive"); }}>Inactive</button>
+        </nav>
         <div className="customer-filter-grid">
           <label className="due-toggle">
             <input
@@ -1020,7 +1037,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                     </span>
                     <span className="mobile-subscriber-balance">
                       <strong className={paymentDue ? "amount-due" : netDue(customer) < 0 ? "amount-credit" : ""}>{accountPosition(customer)}</strong>
-                      <small className={`mobile-status-pill ${customer.status}`}>{customer.status === "active" ? "Active" : "Inactive"}</small>
+                      <small className={`mobile-status-pill ${paymentDue ? "due" : customer.status}`}>{paymentDue ? "Due" : customer.status === "active" ? "Active" : "Inactive"}</small>
                     </span>
                     <ChevronRight size={18} aria-hidden="true" />
                   </button>
@@ -1367,6 +1384,29 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                 required
                 maxLength={160}
                 defaultValue={editing?.name}
+                placeholder="Enter full name"
+              />
+            </label>
+            <label>
+              Phone
+              <input
+                name="phone"
+                type="tel"
+                autoComplete="tel"
+                maxLength={30}
+                defaultValue={editing?.phone ?? ""}
+                placeholder="Enter mobile number"
+              />
+            </label>
+            <label>
+              STB Number
+              <input
+                name="stbNumber"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={80}
+                defaultValue={editing?.stbNumber ?? ""}
+                placeholder="Enter STB number"
               />
             </label>
             <label>
@@ -1387,29 +1427,9 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
               </select>
             </label>
             <label>
-              Phone
-              <input
-                name="phone"
-                type="tel"
-                autoComplete="tel"
-                maxLength={30}
-                defaultValue={editing?.phone ?? ""}
-              />
-            </label>
-            <label>
-              STB Number
-              <input
-                name="stbNumber"
-                autoComplete="off"
-                spellCheck={false}
-                maxLength={80}
-                defaultValue={editing?.stbNumber ?? ""}
-              />
-            </label>
-            <label>
               Plan
               <select name="planId" defaultValue={editing?.planId ?? ""}>
-                <option value="">No plan yet</option>
+                <option value="">Select plan (optional)</option>
                 {plans
                   .filter(
                     (plan) => plan.isActive || plan.id === editing?.planId,
@@ -1426,7 +1446,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
               <input
                 name="installationDate"
                 type="date"
-                defaultValue={editing?.installationDate ?? ""}
+                defaultValue={editing?.installationDate ?? todayInBusinessTimezone()}
               />
               <span className="form-help">
                 The first day this customer received service. Existing bills protect
@@ -1474,7 +1494,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
               </>
             ) : (
               <>
-                <label>
+                <label className="opening-balance-field">
                   Opening Balance
                   <input
                     name="openingBalance"
@@ -1484,7 +1504,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                     pattern="\d+(\.\d{1,2})?"
                   />
                 </label>
-                <label>
+                <label className="opening-balance-field">
                   Balance Type
                   <select name="openingBalanceType" defaultValue="due">
                     <option value="due">Due (Dr)</option>
@@ -1516,7 +1536,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                   ? "Saving…"
                   : editing
                     ? "Update Subscriber"
-                    : "Add Subscriber"}
+                    : "Save Subscriber"}
               </button>
             </div>
           </form>

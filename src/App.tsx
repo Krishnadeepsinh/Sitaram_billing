@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowRightLeft, BarChart3, Bell, ChevronLeft, ChevronRight, CircleDollarSign, Command, DatabaseZap, FileText, HardDriveDownload, LayoutDashboard, LogOut, Menu, Moon, MoreHorizontal, Package, Search, Settings, ShieldCheck, Sun, Users, Wallet, X } from 'lucide-react'
+import { ArrowRightLeft, BarChart3, Bell, ChevronLeft, ChevronRight, CircleDollarSign, Command, DatabaseZap, FileText, HardDriveDownload, LayoutDashboard, LogOut, Menu, MoreHorizontal, Package, Search, Settings, ShieldCheck, Users, Wallet, X } from 'lucide-react'
 import { apiHealth, currentAdmin, listCustomers, login, logout } from './lib/api'
 import type { Customer } from './lib/api'
 import './App.css'
@@ -43,7 +43,6 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sitaram-sidebar') === 'collapsed')
   const [commandOpen, setCommandOpen] = useState(false)
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('sitaram-theme') === 'dark' ? 'dark' : 'light')
   const [page, setPage] = useState<Page>(pageFromHash)
   const [routeHash, setRouteHash] = useState(window.location.hash)
   const [dbState, setDbState] = useState<{ status: 'ok' | 'unavailable'; storage: 'local' | 'cloud' | 'unknown' }>({ status: 'unavailable', storage: 'unknown' })
@@ -56,7 +55,7 @@ function App() {
   }, [])
   useEffect(() => { const syncPage = () => { setPage(pageFromHash()); setService(serviceFromHash()); setRouteHash(window.location.hash) }; window.addEventListener('hashchange', syncPage); return () => window.removeEventListener('hashchange', syncPage) }, [])
   useEffect(() => { document.getElementById('main-content')?.focus() }, [page])
-  useEffect(() => { document.documentElement.dataset.theme = theme; document.documentElement.style.colorScheme = theme; document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0f1420' : '#f1f3f7'); localStorage.setItem('sitaram-theme', theme) }, [theme])
+  useEffect(() => { document.documentElement.dataset.theme = 'light'; document.documentElement.style.colorScheme = 'light'; document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#f8fafc'); localStorage.removeItem('sitaram-theme') }, [])
   useEffect(() => { localStorage.setItem('sitaram-service', service); if (new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('service') !== service) history.replaceState(null, '', pageHref(page, service)) }, [page, service])
   useEffect(() => { const unauthorized = () => setUsername(null); window.addEventListener('sitaram:unauthorized', unauthorized); return () => window.removeEventListener('sitaram:unauthorized', unauthorized) }, [])
   useEffect(() => { localStorage.setItem('sitaram-sidebar', sidebarCollapsed ? 'collapsed' : 'expanded') }, [sidebarCollapsed])
@@ -103,13 +102,14 @@ function App() {
         <button className="service-mode" aria-label={`Switch to ${service === 'cable' ? 'Broadband' : 'Cable'} mode`} onClick={() => { const next = service === 'cable' ? 'broadband' : 'cable'; setService(next); history.replaceState(null, '', pageHref(page, next)) }} title={`${serviceName} workspace`}><span><i className={service} /> <b>{serviceName.toUpperCase()}</b></span><ArrowRightLeft size={14} aria-hidden="true" /></button>
       </div>
       <nav aria-label="Primary navigation">{navigationGroups.map((group) => <section className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map(([label, Icon]) => <a className={page === label ? 'nav-item active' : 'nav-item'} aria-current={page === label ? 'page' : undefined} title={sidebarCollapsed ? pageLabels[label] : undefined} href={pageHref(label, service)} key={label} onPointerEnter={() => void preloadPage(label)} onFocus={() => void preloadPage(label)} onClick={() => setMenuOpen(false)}><Icon size={18} aria-hidden="true" /><span>{pageLabels[label]}</span></a>)}</section>)}</nav>
+      <button className="mobile-sidebar-signout" onClick={signOut}><LogOut size={17} aria-hidden="true" /> Sign out</button>
       <div className={`database-state ${dbState.status}`} title={connected ? `${dbState.storage} database connected` : 'Database connection unavailable'}><span className="database-dot" /><span><strong>{serviceName.toUpperCase()} DB</strong><small>{connected ? (dbState.storage === 'cloud' ? 'Securely synced' : 'Local storage connected') : 'Connection unavailable'}</small></span><DatabaseZap size={15} aria-hidden="true" /></div>
     </aside>
 
     <main id="main-content" tabIndex={-1}>
       <header className="app-topbar">
         <div className="topbar-start"><button className="sidebar-trigger desktop-only" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>{sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}</button><button className="sidebar-trigger mobile-only" onClick={() => setMenuOpen(true)} aria-label="Open navigation" aria-expanded={menuOpen}><Menu size={19} /></button><div className="breadcrumbs"><span>{serviceName} Workspace</span><i>/</i><strong>{pageLabels[page]}</strong></div></div>
-        <div className="topbar-actions"><button className="command-trigger" onClick={() => { if (!document.querySelector('[aria-modal="true"]')) setCommandOpen(true) }}><Search size={15} aria-hidden="true" /><span>Find subscriber or page…</span><kbd>Ctrl K</kbd></button><button className="topbar-icon mobile-search-trigger" onClick={() => { if (!document.querySelector('[aria-modal="true"]')) setCommandOpen(true) }} aria-label="Find subscriber"><Search size={17} aria-hidden="true" /></button><span className={`connection-pill ${connected ? 'connected' : ''}`}><i />{connected ? 'Connected' : 'Offline'}</span><button className="topbar-icon" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} theme`}>{theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="user-chip" onClick={signOut} aria-label={`Sign out ${username}`}><span>{username.slice(0, 1).toUpperCase()}</span><span><strong>{username}</strong><small>Administrator</small></span><LogOut size={15} /></button></div>
+        <div className="topbar-actions"><button className="command-trigger" onClick={() => { if (!document.querySelector('[aria-modal="true"]')) setCommandOpen(true) }}><Search size={15} aria-hidden="true" /><span>Find subscriber or page…</span><kbd>Ctrl K</kbd></button><button className="topbar-icon mobile-search-trigger" onClick={() => { if (!document.querySelector('[aria-modal="true"]')) setCommandOpen(true) }} aria-label="Find subscriber"><Search size={17} aria-hidden="true" /></button><span className={`connection-pill ${connected ? 'connected' : ''}`}><i />{connected ? 'Connected' : 'Offline'}</span><button className="user-chip" onClick={signOut} aria-label={`Sign out ${username}`}><span>{username.slice(0, 1).toUpperCase()}</span><span><strong>{username}</strong><small>Administrator</small></span><LogOut size={15} /></button></div>
       </header>
       <Suspense fallback={<PageLoadingSkeleton />}><div className="workspace-content">{page === 'Dashboard' ? <DashboardPage serviceType={service} onNavigate={navigateTo} onOpenSearch={() => setCommandOpen(true)} /> : page === 'Plans' ? <PlansPage serviceType={service} /> : page === 'Subscribers' ? <CustomersPage key={`${service}:${routeHash}`} serviceType={service} initialQuery={new URLSearchParams(routeHash.split('?')[1] ?? '').get('query') ?? ''} initialAction={new URLSearchParams(routeHash.split('?')[1] ?? '').get('action') ?? ''} /> : page === 'Invoices' ? <InvoicesPage serviceType={service} /> : page === 'Payments' ? <PaymentsPage serviceType={service} /> : page === 'Reports' ? <ReportsPage serviceType={service} /> : page === 'Expenses' ? <ExpensesPage /> : page === 'Reminders' ? <RemindersPage serviceType={service} /> : page === 'Manual Backup' ? <BackupPage /> : <SettingsPage />}</div></Suspense>
     </main>
