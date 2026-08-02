@@ -225,7 +225,7 @@ export function PlansPage({ serviceType }: { serviceType: ServiceType }) {
           <span>{plans.length} total</span>
         </div>
         {loading ? (
-          <p className="empty-inline" role="status">Loading plans…</p>
+          <p className="empty-inline loading-inline" role="status">Loading plans…</p>
         ) : plans.length ? (
           <div className="table-wrap">
             <table>
@@ -928,7 +928,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
       {notice && <NoticeMessage notice={notice} />}
       <article className={`panel customer-filters${mobileFiltersOpen ? " mobile-filters-open" : ""}`}>
         <div className="search-row">
-          <Search size={17} />
+          <Search size={17} aria-hidden="true" />
           <input
             name="subscriberSearch"
             autoComplete="off"
@@ -937,7 +937,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
             onKeyDown={(event) => {
               if (event.key === "Enter") { setCustomerOffset(0); refresh(query, 0); }
             }}
-            placeholder="Search by name, ID, phone, STB, or area…"
+            placeholder="Search name, ID, phone or STB…"
             aria-label="Search customers"
           />
           <button className="secondary" onClick={() => { setCustomerOffset(0); refresh(query, 0); }}>
@@ -1019,7 +1019,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
           </span>
         </div>
         {loading ? (
-          <p className="empty-inline" role="status">Loading customers…</p>
+          <p className="empty-inline loading-inline" role="status">Loading customers…</p>
         ) : filteredCustomers.length ? (
           <>
           <div className="mobile-subscriber-list" role="list">
@@ -1631,7 +1631,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                 <strong>{accountHistory.length} entries</strong>
               </div>
               {summaryLoading ? (
-                <p className="empty-inline" role="status">Loading history…</p>
+                <p className="empty-inline loading-inline" role="status">Loading history…</p>
               ) : accountHistory.length ? (
                 <div className="history-ledger" role="list" aria-label="Account transactions, newest first">
                   {accountHistory.map((entry) =>
@@ -2055,7 +2055,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                 placeholder="Add a note only if useful"
               />
             </label>
-            {archivedLoading ? <p className="empty-inline" role="status">Loading archived subscribers…</p> : archivedCustomers.length ? (
+            {archivedLoading ? <p className="empty-inline loading-inline" role="status">Loading archived subscribers…</p> : archivedCustomers.length ? (
               archivedCustomers.map((customer) => (
                 <article className="archived-customer-card" key={customer.id}>
                   <div className="archived-customer-heading">

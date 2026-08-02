@@ -26,6 +26,7 @@ import {
   Search,
   Settings2,
   Share2,
+  SlidersHorizontal,
   TrendingUp,
   Trash2,
   UserPlus,
@@ -436,6 +437,8 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
     from: "",
     to: "",
   });
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const activeInvoiceFilterCount = Object.values(filters).filter(Boolean).length + Number(showMerged);
   const deferredQuery = useDebouncedValue(query, 300);
   const refresh = useCallback(() => {
     setLoading(true);
@@ -685,21 +688,26 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
         }
       />
       {notice && <NoticeMessage notice={notice} />}
-      <article className="panel table-panel responsive-register invoice-register">
+      <article className={`panel table-panel responsive-register invoice-register${mobileFiltersOpen ? " mobile-register-filters-open" : ""}`}>
         <div className="panel-heading">
           <div>
             <p className="eyebrow">{serviceType} billing</p>
             <h2>Bill History</h2>
           </div>
-          {selected.length >= 2 && (
-            <button
-              className="secondary"
-              disabled={submitting}
-              onClick={() => setConfirming("merge")}
-            >
-              <Merge size={16} aria-hidden="true" /> Merge {selected.length}
+          <div className="register-heading-actions">
+            {selected.length >= 2 && (
+              <button
+                className="secondary"
+                disabled={submitting}
+                onClick={() => setConfirming("merge")}
+              >
+                <Merge size={16} aria-hidden="true" /> Merge {selected.length}
+              </button>
+            )}
+            <button className="secondary register-filter-toggle" aria-controls="invoice-filter-grid" aria-expanded={mobileFiltersOpen} onClick={() => setMobileFiltersOpen((open) => !open)}>
+              <SlidersHorizontal size={16} aria-hidden="true" /> Filters{activeInvoiceFilterCount ? ` (${activeInvoiceFilterCount})` : ""}
             </button>
-          )}
+          </div>
         </div>
         <div className="filter-row">
           <div className="search-row">
@@ -723,7 +731,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
             Show merged-away records
           </label>
         </div>
-        <div className="filter-grid">
+        <div className="filter-grid" id="invoice-filter-grid">
           <label>
             Status
             <select
@@ -811,7 +819,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
           </label>
         </div>
         {loading ? (
-          <p className="empty-inline" role="status">
+          <p className="empty-inline loading-inline" role="status">
             Loading bills…
           </p>
         ) : invoices.length ? (
@@ -1164,6 +1172,8 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
     to: "",
     mode: "",
   });
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const activePaymentFilterCount = [filters.from, filters.to, filters.mode].filter(Boolean).length;
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
   const [notice, setNotice] = useState<Notice>();
@@ -1379,14 +1389,17 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
         }
       />
       {notice && <NoticeMessage notice={notice} />}
-      <article className="panel table-panel responsive-register payment-register">
+      <article className={`panel table-panel responsive-register payment-register${mobileFiltersOpen ? " mobile-register-filters-open" : ""}`}>
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Collection history</p>
             <h2>Payment History</h2>
           </div>
+          <button className="secondary register-filter-toggle" aria-controls="payment-filter-grid" aria-expanded={mobileFiltersOpen} onClick={() => setMobileFiltersOpen((open) => !open)}>
+            <SlidersHorizontal size={16} aria-hidden="true" /> Filters{activePaymentFilterCount ? ` (${activePaymentFilterCount})` : ""}
+          </button>
         </div>
-        <div className="filter-grid">
+        <div className="filter-grid" id="payment-filter-grid">
           <label>
             Search
             <input
@@ -1450,7 +1463,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
           </label>
         </div>
         {loading ? (
-          <p className="empty-inline" role="status">
+          <p className="empty-inline loading-inline" role="status">
             Loading payments…
           </p>
         ) : payments.length ? (
@@ -1875,7 +1888,7 @@ export function ExpensesPage() {
           </label>
         </div>
         {loading ? (
-          <p className="empty-inline" role="status">
+          <p className="empty-inline loading-inline" role="status">
             Loading expenses…
           </p>
         ) : expenses.length ? (
