@@ -546,7 +546,7 @@ body:has(.modal-backdrop),body:has(.command-backdrop) { overflow:hidden; }
 .restart-choice>div { display:grid;grid-template-columns:1fr 1fr;gap:8px; }
 .restart-choice label { display:flex;align-items:flex-start;gap:9px;min-height:74px;padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--card);cursor:pointer; }
 .restart-choice label.selected { border-color:var(--primary);box-shadow:0 0 0 2px var(--ring); }
-.restart-choice input { flex:none;margin-top:3px; }
+.restart-choice input { flex:none;width:18px!important;min-width:18px;height:18px;min-height:18px;margin:3px 0 0; padding:0; }
 .restart-choice span { display:grid; }
 .restart-choice small { margin-top:3px;color:var(--muted);font-size:11px;line-height:16px; }
 .recharge-length>div { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px; }
@@ -886,7 +886,7 @@ h1,h2,h3 { text-wrap:balance; }
   .modal:has(>.invoice-workflow) .modal-heading .icon-button svg,.modal:has(>.customer-form) .modal-heading .icon-button svg { display:none; }
   .modal:has(>.invoice-workflow) .modal-heading .icon-button:before,.modal:has(>.customer-form) .modal-heading .icon-button:before { color:#10213e;font-size:24px;line-height:1;content:'←'; }
   .modal:has(>.invoice-workflow) .modal-form-body,.modal:has(>.customer-form) .modal-form-body { max-height:none;padding:14px 0 96px; }
-  .modal:has(>.invoice-workflow) .modal-actions,.modal:has(>.customer-form) .modal-actions { margin:0 -16px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));border-top:1px solid #e1e5ea;background:#fff; }
+  .modal:has(>.invoice-workflow) .modal-actions,.modal:has(>.customer-form) .modal-actions { margin:0;padding:10px 0 calc(10px + env(safe-area-inset-bottom));border-top:1px solid #e1e5ea;background:#fff; }
   .modal:has(>.invoice-workflow) .modal-actions .secondary,.modal:has(>.customer-form) .modal-actions .secondary { display:none; }
   .modal:has(>.invoice-workflow) .modal-actions .primary,.modal:has(>.customer-form) .modal-actions .primary { width:100%;min-height:50px; }
   .invoice-workflow .workflow-intro { display:none; }
