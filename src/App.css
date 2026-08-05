@@ -1137,7 +1137,7 @@ body { overflow-x:hidden; }
   .mobile-subscriber-actions { display:flex;min-height:44px;align-items:center;gap:7px;padding:5px 10px 8px 59px; }
   .mobile-subscriber-actions>span { min-width:0;flex:1;overflow:hidden;color:var(--muted);font-size:10px;line-height:14px;text-overflow:ellipsis;white-space:nowrap; }
   .mobile-subscriber-actions button { width:auto;min-width:68px;min-height:36px;padding:6px 9px;border-radius:9px;font-size:10.5px; }
-  .mobile-subscriber-actions .mobile-more-action { width:36px;min-width:36px;padding:0; }
+  .mobile-subscriber-actions .mobile-more-action { width:auto;min-width:68px;padding-inline:9px; }
 
   .area-manager { margin:12px 0 0; }
   .area-manager .area-form { grid-template-columns:minmax(0,1fr) auto;margin:10px!important; }

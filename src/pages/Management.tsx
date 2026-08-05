@@ -1047,7 +1047,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
                       {paymentDue ? <Wallet size={15} aria-hidden="true" /> : canInvoice ? <FileText size={15} aria-hidden="true" /> : <Pencil size={15} aria-hidden="true" />}
                       {paymentDue ? "Pay" : canInvoice ? "Recharge" : "Setup"}
                     </button>
-                    <button className="secondary mobile-more-action" onClick={() => setActionsCustomer(customer)} aria-label={`More actions for ${customer.name}`}><MoreHorizontal size={16} aria-hidden="true" /></button>
+                    <button className="secondary mobile-more-action" onClick={() => setActionsCustomer(customer)} aria-label={`More actions for ${customer.name}`}><MoreHorizontal size={16} aria-hidden="true" /><span>More</span></button>
                   </div>
                 </article>
               );

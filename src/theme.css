@@ -876,7 +876,7 @@ h1,h2,h3 { text-wrap:balance; }
   .mobile-subscriber-balance>strong { font-size:11px; }
   .mobile-status-pill { border-radius:4px; }
   .mobile-status-pill.due { border-color:#fecaca;color:#dc2626;background:#fff1f2; }
-  .mobile-subscriber-actions { display:none; }
+  .mobile-subscriber-actions { display:flex; }
 
   .modal-backdrop:has(.invoice-workflow),.modal-backdrop:has(.customer-form) { padding:0;align-items:stretch; }
   .modal:has(>.invoice-workflow),.modal:has(>.customer-form) { width:100vw;max-width:none;height:100dvh;max-height:100dvh;padding:0 16px;border:0;border-radius:0;box-shadow:none; }
