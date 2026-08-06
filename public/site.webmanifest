@@ -1,0 +1,31 @@
+{
+  "name": "Sitaram Billing & Records",
+  "short_name": "Sitaram Billing",
+  "description": "Secure cable and broadband billing records for Sitaram.",
+  "start_url": "/#/dashboard?service=cable",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#102a43",
+  "background_color": "#f8fafc",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
