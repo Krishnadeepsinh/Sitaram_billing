@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -414,6 +415,9 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [settings, setSettings] = useState<BusinessSettings>();
   const [detail, setDetail] = useState<InvoiceDetail>();
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<number>();
+  const [expandedInvoiceDetail, setExpandedInvoiceDetail] = useState<InvoiceDetail>();
+  const [expandingInvoiceId, setExpandingInvoiceId] = useState<number>();
   const [pdfPreview, setPdfPreview] = useState<{ title: string; url: string }>();
   const [query, setQuery] = useState("");
   const [showMerged, setShowMerged] = useState(false);
@@ -616,6 +620,27 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
         message:
           error instanceof Error ? error.message : "Unable to load invoice.",
       });
+    }
+  }
+  async function toggleInvoiceDetails(invoice: Invoice) {
+    if (expandedInvoiceId === invoice.id) {
+      setExpandedInvoiceId(undefined);
+      setExpandedInvoiceDetail(undefined);
+      return;
+    }
+    setExpandedInvoiceId(invoice.id);
+    setExpandedInvoiceDetail(undefined);
+    setExpandingInvoiceId(invoice.id);
+    try {
+      setExpandedInvoiceDetail(await getInvoice(serviceType, invoice.id));
+    } catch (error) {
+      setExpandedInvoiceId(undefined);
+      setNotice({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Unable to load invoice details.",
+      });
+    } finally {
+      setExpandingInvoiceId(undefined);
     }
   }
   async function confirmDelete(invoice: Invoice) {
@@ -841,6 +866,7 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                 </thead>
                 <tbody>
                   {invoices.map((invoice) => (
+                    <Fragment key={invoice.id}>
                     <tr
                       key={invoice.id}
                       className={invoice.isMerged ? "muted-row" : ""}
@@ -863,7 +889,19 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                       </td>
                       <td className="record-bill-cell" data-label="Bill">
                         <div className="record-modern-content">
-                          <strong className="record-id">{invoice.invoiceCode}</strong>
+                          <div className="record-title-line">
+                            <button
+                              type="button"
+                              className={`record-expand-button${expandedInvoiceId === invoice.id ? " is-expanded" : ""}`}
+                              aria-expanded={expandedInvoiceId === invoice.id}
+                              aria-controls={`invoice-details-${invoice.id}`}
+                              aria-label={`${expandedInvoiceId === invoice.id ? "Hide" : "Show"} details for ${invoice.invoiceCode}`}
+                              onClick={() => void toggleInvoiceDetails(invoice)}
+                            >
+                              <ChevronRight size={15} aria-hidden="true" />
+                            </button>
+                            <strong className="record-id">{invoice.invoiceCode}</strong>
+                          </div>
                           <small className="record-meta"><span>Issued</span> {formatBusinessDate(invoice.issuedDate)}</small>
                           <small className="record-meta"><span>Due</span> {formatBusinessDate(invoice.dueDate)}</small>
                           <small className="record-meta">{invoice.billingMode === "historical" ? "Older missed bill" : "Service recharge"}</small>
@@ -931,6 +969,24 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                         </div>
                       </td>
                     </tr>
+                    {expandedInvoiceId === invoice.id ? (
+                      <tr className="billing-detail-row" key={`invoice-details-${invoice.id}`}>
+                        <td colSpan={7}>
+                          {expandingInvoiceId === invoice.id ? (
+                            <p className="billing-detail-loading" role="status">Loading full invoice details…</p>
+                          ) : expandedInvoiceDetail ? (
+                            <div id={`invoice-details-${invoice.id}`} className="billing-inline-detail">
+                              <div className="billing-inline-detail-heading">
+                                <div><strong>Full invoice details</strong><span>{expandedInvoiceDetail.invoiceCode} · {expandedInvoiceDetail.customerName}</span></div>
+                                <button type="button" className="text-button" onClick={() => setExpandedInvoiceId(undefined)}>Hide details</button>
+                              </div>
+                              <InvoiceDetailView invoice={expandedInvoiceDetail} />
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -1181,6 +1237,9 @@ export function PaymentsPage({ serviceType, adminName }: { serviceType: ServiceT
   const [settings, setSettings] = useState<BusinessSettings>();
   const [customerId, setCustomerId] = useState("");
   const [detail, setDetail] = useState<PaymentDetail>();
+  const [expandedPaymentId, setExpandedPaymentId] = useState<number>();
+  const [expandedPaymentDetail, setExpandedPaymentDetail] = useState<PaymentDetail>();
+  const [expandingPaymentId, setExpandingPaymentId] = useState<number>();
   const [pdfPreview, setPdfPreview] = useState<{ title: string; url: string }>();
   const [filters, setFilters] = useState({
     query: "",
@@ -1321,6 +1380,27 @@ export function PaymentsPage({ serviceType, adminName }: { serviceType: ServiceT
         message:
           error instanceof Error ? error.message : "Unable to load receipt.",
       });
+    }
+  }
+  async function togglePaymentDetails(payment: Payment) {
+    if (expandedPaymentId === payment.id) {
+      setExpandedPaymentId(undefined);
+      setExpandedPaymentDetail(undefined);
+      return;
+    }
+    setExpandedPaymentId(payment.id);
+    setExpandedPaymentDetail(undefined);
+    setExpandingPaymentId(payment.id);
+    try {
+      setExpandedPaymentDetail(await getPayment(serviceType, payment.id));
+    } catch (error) {
+      setExpandedPaymentId(undefined);
+      setNotice({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Unable to load payment details.",
+      });
+    } finally {
+      setExpandingPaymentId(undefined);
     }
   }
   async function confirmReversal(payment: Payment) {
@@ -1498,11 +1578,26 @@ export function PaymentsPage({ serviceType, adminName }: { serviceType: ServiceT
                 </thead>
                 <tbody>
                   {payments.map((payment) => (
+                    <Fragment key={payment.id}>
                     <tr key={payment.id}>
                       <td className="record-payment-cell" data-label="Receipt">
-                        <strong className="record-id">{payment.paymentCode}</strong>
+                        <div className="record-title-line">
+                          <button
+                            type="button"
+                            className={`record-expand-button${expandedPaymentId === payment.id ? " is-expanded" : ""}`}
+                            aria-expanded={expandedPaymentId === payment.id}
+                            aria-controls={`payment-details-${payment.id}`}
+                            aria-label={`${expandedPaymentId === payment.id ? "Hide" : "Show"} details for ${payment.paymentCode}`}
+                            onClick={() => void togglePaymentDetails(payment)}
+                          >
+                            <ChevronRight size={15} aria-hidden="true" />
+                          </button>
+                          <strong className="record-id">{payment.paymentCode}</strong>
+                        </div>
                         <Status>{payment.resultingStatus}</Status>
                         {payment.paymentReference ? <small className="record-meta"><span>Ref</span> {payment.paymentReference}</small> : <small className="record-meta">No reference added</small>}
+                        <small className="record-mobile-summary">Date {formatBusinessDate(payment.paymentDate)} · {payment.paymentMode.replace("_", " ").toUpperCase()}</small>
+                        <small className="record-mobile-summary">Received <strong>{formatRupees(payment.amountReceivedPaise)}</strong></small>
                       </td>
                       <td data-label="Customer">
                         <strong>{payment.customerName}</strong>
@@ -1543,6 +1638,24 @@ export function PaymentsPage({ serviceType, adminName }: { serviceType: ServiceT
                         </div>
                       </td>
                     </tr>
+                    {expandedPaymentId === payment.id ? (
+                      <tr className="billing-detail-row" key={`payment-details-${payment.id}`}>
+                        <td colSpan={6}>
+                          {expandingPaymentId === payment.id ? (
+                            <p className="billing-detail-loading" role="status">Loading full payment details…</p>
+                          ) : expandedPaymentDetail ? (
+                            <div id={`payment-details-${payment.id}`} className="billing-inline-detail">
+                              <div className="billing-inline-detail-heading">
+                                <div><strong>Full payment details</strong><span>{expandedPaymentDetail.paymentCode} · {expandedPaymentDetail.customerName}</span></div>
+                                <button type="button" className="text-button" onClick={() => setExpandedPaymentId(undefined)}>Hide details</button>
+                              </div>
+                              <PaymentDetailView payment={expandedPaymentDetail} />
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
