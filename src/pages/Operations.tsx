@@ -900,7 +900,7 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                             >
                               <ChevronRight size={15} aria-hidden="true" />
                             </button>
-                            <strong className="record-id">{invoice.invoiceCode}</strong>
+                            <span className="record-code-wrap"><small>Invoice No.</small><strong className="record-id">{invoice.invoiceCode}</strong></span>
                           </div>
                           <small className="record-meta"><span>Issued</span> {formatBusinessDate(invoice.issuedDate)}</small>
                           <small className="record-meta"><span>Due</span> {formatBusinessDate(invoice.dueDate)}</small>
@@ -1592,7 +1592,7 @@ export function PaymentsPage({ serviceType, adminName }: { serviceType: ServiceT
                           >
                             <ChevronRight size={15} aria-hidden="true" />
                           </button>
-                          <strong className="record-id">{payment.paymentCode}</strong>
+                          <span className="record-code-wrap"><small>Receipt No.</small><strong className="record-id">{payment.paymentCode}</strong></span>
                         </div>
                         <Status>{payment.resultingStatus}</Status>
                         {payment.paymentReference ? <small className="record-meta"><span>Ref</span> {payment.paymentReference}</small> : <small className="record-meta">No reference added</small>}
@@ -2813,6 +2813,7 @@ export function SettingsPage() {
 function InvoiceDetailView({ invoice }: { invoice: InvoiceDetail }) {
   return (
     <div className="detail-grid">
+      <Detail label="Invoice No." value={invoice.invoiceCode} />
       <Detail
         label="Customer"
         value={`${invoice.customerName} · ${invoice.customerCode}`}
@@ -2867,6 +2868,7 @@ function InvoiceDetailView({ invoice }: { invoice: InvoiceDetail }) {
 function PaymentDetailView({ payment }: { payment: PaymentDetail }) {
   return (
     <div className="detail-grid">
+      <Detail label="Receipt No." value={payment.paymentCode} />
       <Detail
         label="Customer"
         value={`${payment.customerName} · ${payment.customerCode}`}

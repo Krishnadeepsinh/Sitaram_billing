@@ -1021,6 +1021,8 @@ h1,h2,h3 { text-wrap:balance; }
 /* Compact ledger rows on phones. The row stays scannable; the detail row is
    opened on demand so long invoice/payment history does not become a card wall. */
 .record-title-line { display:flex; align-items:center; min-width:0; gap:5px; }
+.record-code-wrap { display:grid; min-width:0; gap:1px; }
+.record-code-wrap small { color:var(--muted); font-size:9px; font-weight:700; line-height:12px; letter-spacing:.06em; text-transform:uppercase; }
 .record-mobile-summary { display:none; }
 .record-expand-button { display:inline-grid; flex:0 0 44px; width:44px; height:44px; place-items:center; padding:0; border:1px solid var(--border); border-radius:9px; color:var(--muted); background:var(--card); cursor:pointer; touch-action:manipulation; transition:color 160ms ease,background-color 160ms ease,border-color 160ms ease,transform 160ms ease; }
 .record-expand-button:hover { color:var(--primary); border-color:color-mix(in srgb,var(--primary) 45%,var(--border)); background:var(--primary-soft); }
@@ -1045,6 +1047,7 @@ h1,h2,h3 { text-wrap:balance; }
   .billing-record-table tbody tr:not(.billing-detail-row)>td { display:block; min-width:0; padding:2px 0; border:0; text-align:left; white-space:normal; overflow-wrap:anywhere; }
   .billing-record-table tbody tr:not(.billing-detail-row)>td::before { display:none; content:none; }
   .billing-record-table tbody tr:not(.billing-detail-row) .record-id { font-size:13px; line-height:18px; }
+  .billing-record-table tbody tr:not(.billing-detail-row) .record-code-wrap small { font-size:8px; line-height:10px; }
   .billing-record-table tbody tr:not(.billing-detail-row) .record-meta { font-size:10px; line-height:15px; }
   .billing-record-table tbody tr:not(.billing-detail-row) .record-title-line { gap:4px; }
   .billing-record-table tbody tr:not(.billing-detail-row) .record-expand-button { flex-basis:36px; width:36px; height:36px; border-radius:8px; }
