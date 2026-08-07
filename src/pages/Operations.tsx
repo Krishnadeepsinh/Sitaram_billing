@@ -1646,13 +1646,12 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                 </select>
               </label>
             {paymentMode === "upi" ? <label>
-              UPI Reference / UTR *
+              UPI Reference / UTR (optional)
               <input
                 name="paymentReference"
                 maxLength={120}
                 autoComplete="off"
-                placeholder="Enter the UPI transaction reference…"
-                required
+                placeholder="Enter it if available"
               />
             </label> : null}
             {customer ? (

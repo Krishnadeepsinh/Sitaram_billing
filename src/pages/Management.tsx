@@ -2024,13 +2024,12 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
               holdAsCredit={quickPayment.unbilledOpeningDuePaise > 0}
             />
             {quickPaymentMode === "upi" ? <label className="full-field">
-              UPI Reference / UTR *
+              UPI Reference / UTR (optional)
               <input
                 name="paymentReference"
                 autoComplete="off"
                 maxLength={120}
-                placeholder="Enter the UPI transaction reference…"
-                required
+                placeholder="Enter it if available"
               />
             </label> : null}
             <details className="advanced-options full-field" open><summary>Payment Date & Notes</summary><label>Payment Date<input name="paymentDate" type="date" max={todayInBusinessTimezone()} defaultValue={todayInBusinessTimezone()} required /></label><label>Notes<input name="notes" autoComplete="off" maxLength={500} placeholder="Optional collection note…" /></label></details>
