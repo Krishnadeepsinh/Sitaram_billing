@@ -93,6 +93,9 @@ import { PaymentAmountFields } from "../components/PaymentAmountFields";
 import { downloadCsv } from "../lib/csv";
 
 type Notice = { kind: "success" | "error"; message: string } | undefined;
+function clickedBillingControl(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest("button,input,a,select,textarea"));
+}
 function currentMonthRange() {
   const today = todayInBusinessTimezone();
   return {
@@ -445,6 +448,8 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
   const activeInvoiceFilterCount = Object.values(filters).filter(Boolean).length + Number(showMerged);
   const deferredQuery = useDebouncedValue(query, 300);
   const refresh = useCallback(() => {
+    setExpandedInvoiceId(undefined);
+    setExpandedInvoiceDetail(undefined);
     setLoading(true);
     Promise.all([
       listCustomers(serviceType, '', false, { limit: 500 }),
@@ -870,6 +875,13 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                     <tr
                       key={invoice.id}
                       className={invoice.isMerged ? "muted-row" : ""}
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={expandedInvoiceId === invoice.id}
+                      aria-controls={`invoice-details-${invoice.id}`}
+                      aria-label={`Toggle details for ${invoice.invoiceCode}`}
+                      onClick={(event) => { if (!clickedBillingControl(event.target)) void toggleInvoiceDetails(invoice); }}
+                      onKeyDown={(event) => { if ((event.key === "Enter" || event.key === " ") && !clickedBillingControl(event.target)) { event.preventDefault(); void toggleInvoiceDetails(invoice); } }}
                     >
                       <td data-label="Select">
                         {invoice.status === "unpaid" && !invoice.isMerged ? (
@@ -1281,6 +1293,8 @@ export function PaymentsPage({ serviceType, adminName }: { serviceType: ServiceT
     ],
   );
   const refresh = useCallback(() => {
+    setExpandedPaymentId(undefined);
+    setExpandedPaymentDetail(undefined);
     setLoading(true);
     Promise.all([
       listCustomers(serviceType, '', false, { limit: 500 }),
@@ -1579,7 +1593,16 @@ export function PaymentsPage({ serviceType, adminName }: { serviceType: ServiceT
                 <tbody>
                   {payments.map((payment) => (
                     <Fragment key={payment.id}>
-                    <tr key={payment.id}>
+                    <tr
+                      key={payment.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={expandedPaymentId === payment.id}
+                      aria-controls={`payment-details-${payment.id}`}
+                      aria-label={`Toggle details for ${payment.paymentCode}`}
+                      onClick={(event) => { if (!clickedBillingControl(event.target)) void togglePaymentDetails(payment); }}
+                      onKeyDown={(event) => { if ((event.key === "Enter" || event.key === " ") && !clickedBillingControl(event.target)) { event.preventDefault(); void togglePaymentDetails(payment); } }}
+                    >
                       <td className="record-payment-cell" data-label="Receipt">
                         <div className="record-title-line">
                           <button
