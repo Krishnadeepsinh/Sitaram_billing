@@ -825,17 +825,17 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
         ) : invoices.length ? (
           <>
             <div className="table-wrap">
-              <table>
+              <table className="billing-record-table">
                 <thead>
                   <tr>
                     <th>
                       <span className="sr-only">Select</span>
                     </th>
-                    <th>Bill</th>
+                    <th>Bill & dates</th>
                     <th>Customer</th>
-                    <th>Period</th>
+                    <th>Service period</th>
+                    <th>Amounts</th>
                     <th>Balance</th>
-                    <th>Status</th>
                     <th className="row-actions-column">Actions</th>
                   </tr>
                 </thead>
@@ -861,22 +861,33 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                           />
                         ) : null}
                       </td>
-                      <td data-label="Bill">
+                      <td className="record-bill-cell" data-label="Bill">
+                        <div className="record-modern-content">
+                          <strong className="record-id">{invoice.invoiceCode}</strong>
+                          <small className="record-meta"><span>Issued</span> {formatBusinessDate(invoice.issuedDate)}</small>
+                          <small className="record-meta"><span>Due</span> {formatBusinessDate(invoice.dueDate)}</small>
+                          <small className="record-meta">{invoice.billingMode === "historical" ? "Older missed bill" : "Service recharge"}</small>
+                        </div>
                         <strong>{invoice.invoiceCode}</strong>
                         <small>
                           Issued {formatBusinessDate(invoice.issuedDate)} · Due{" "}
                           {formatBusinessDate(invoice.dueDate)}
                         </small>
                       </td>
-                      <td data-label="Customer">{invoice.customerName}</td>
-                      <td data-label="Period">
-                        {formatBusinessDate(invoice.periodStart)}
-                        <small>
-                          to {formatBusinessDate(invoice.periodEnd)}
-                        </small>
-                        <small>{billingCyclePosition(invoice.periodStart, invoice.periodEnd)}</small>
+                      <td data-label="Customer">
+                        <strong>{invoice.customerName}</strong>
+                        <small className="record-meta">Customer account #{invoice.customerId}</small>
                       </td>
-                      <td data-label="Balance">
+                      <td data-label="Service period">
+                        <strong>{formatBusinessDate(invoice.periodStart)} - {formatBusinessDate(invoice.periodEnd)}</strong>
+                        <small className="record-meta">{billingCyclePosition(invoice.periodStart, invoice.periodEnd)}</small>
+                      </td>
+                      <td className="record-amounts-cell" data-label="Amounts">
+                        <div className="record-modern-content record-money-stack">
+                          <span className="record-money-row"><small>Current</small><strong>{formatRupees(invoice.currentPeriodAmountPaise)}</strong></span>
+                          <span className="record-money-row"><small>Previous</small><strong>{formatRupees(invoice.previousDueSnapshotPaise)}</strong></span>
+                          <span className="record-money-row total"><small>Total bill</small><strong>{formatRupees(invoice.totalPayablePaise)}</strong></span>
+                        </div>
                         <strong
                           className={
                             invoice.balancePaise > 0 ? "amount-due" : ""
@@ -889,7 +900,12 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                           Total at issue {formatRupees(invoice.totalPayablePaise)}
                         </small>
                       </td>
-                      <td data-label="Status">
+                      <td className="record-balance-cell" data-label="Balance">
+                        <div className="record-modern-content record-balance">
+                          <small>Due now</small>
+                          <strong className={invoice.balancePaise > 0 ? "amount-due" : "amount-paid"}>{formatRupees(invoice.balancePaise)}</strong>
+                          <Status>{invoice.isMerged ? "merged" : invoice.status}</Status>
+                        </div>
                         <Status>
                           {invoice.isMerged ? "merged" : invoice.status}
                         </Status>
@@ -1469,39 +1485,42 @@ export function PaymentsPage({ serviceType, adminName }: { serviceType: ServiceT
         ) : payments.length ? (
           <>
             <div className="table-wrap">
-              <table>
+              <table className="billing-record-table">
                 <thead>
                   <tr>
-                    <th>Receipt</th>
+                    <th>Receipt & status</th>
                     <th>Customer</th>
-                    <th>Date</th>
-                    <th>Received</th>
-                    <th>Mode</th>
+                    <th>Payment date</th>
+                    <th>Collection</th>
+                    <th>Method</th>
                     <th className="row-actions-column">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {payments.map((payment) => (
                     <tr key={payment.id}>
-                      <td data-label="Receipt">
-                        <strong>{payment.paymentCode}</strong>
-                        <small>
-                          <Status>{payment.resultingStatus}</Status>
-                        </small>
-                        {payment.paymentReference ? <small>Ref {payment.paymentReference}</small> : null}
+                      <td className="record-payment-cell" data-label="Receipt">
+                        <strong className="record-id">{payment.paymentCode}</strong>
+                        <Status>{payment.resultingStatus}</Status>
+                        {payment.paymentReference ? <small className="record-meta"><span>Ref</span> {payment.paymentReference}</small> : <small className="record-meta">No reference added</small>}
                       </td>
-                      <td data-label="Customer">{payment.customerName}</td>
-                      <td data-label="Date">
-                        {formatBusinessDate(payment.paymentDate)}
+                      <td data-label="Customer">
+                        <strong>{payment.customerName}</strong>
+                        <small className="record-meta">Customer account #{payment.customerId}</small>
                       </td>
-                      <td data-label="Received">
-                        {formatRupees(payment.amountReceivedPaise)}
-                        <small>
-                          Discount {formatRupees(payment.discountGivenPaise)}
-                        </small>
+                      <td data-label="Payment date">
+                        <strong>{formatBusinessDate(payment.paymentDate)}</strong>
                       </td>
-                      <td data-label="Mode">
-                        {payment.paymentMode.replace("_", " ").toUpperCase()}
+                      <td data-label="Collection">
+                        <div className="record-money-stack">
+                          <span className="record-money-row total"><small>Received</small><strong>{formatRupees(payment.amountReceivedPaise)}</strong></span>
+                          <span className="record-money-row"><small>Discount</small><strong>{formatRupees(payment.discountGivenPaise)}</strong></span>
+                          <span className="record-money-row"><small>Covered</small><strong>{formatRupees(payment.settledAmountPaise)}</strong></span>
+                        </div>
+                      </td>
+                      <td data-label="Method">
+                        <strong>{payment.paymentMode.replace("_", " ").toUpperCase()}</strong>
+                        <small className="record-meta">Payment method</small>
                       </td>
                       <td className="row-actions-column" data-label="Actions">
                         <div className="action-row">

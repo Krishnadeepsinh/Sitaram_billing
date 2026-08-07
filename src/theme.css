@@ -482,6 +482,35 @@ body:has(.modal-backdrop),body:has(.command-backdrop) { overflow:hidden; }
   .customer-register .status-toggle { min-height:44px; }
 }
 
+/* Billing register rows: make every value scanable as a labelled record. */
+.billing-record-table td { vertical-align:top; }
+.billing-record-table td>small,.billing-record-table td>strong { display:block; }
+.billing-record-table .record-modern-content { display:grid; gap:3px; min-width:0; }
+.billing-record-table .record-bill-cell> :not(.record-modern-content),
+.billing-record-table .record-amounts-cell> :not(.record-modern-content),
+.billing-record-table .record-balance-cell> :not(.record-modern-content) { display:none; }
+.billing-record-table .record-id { color:var(--foreground); font-size:14px; line-height:20px; }
+.billing-record-table .record-meta { display:flex; align-items:baseline; gap:4px; color:var(--muted); font-size:11px; line-height:16px; white-space:normal; }
+.billing-record-table .record-meta span { color:var(--foreground); font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+.billing-record-table .record-money-stack { display:grid; min-width:150px; gap:3px; }
+.billing-record-table .record-money-row { display:grid; grid-template-columns:auto auto; align-items:baseline; justify-content:space-between; gap:12px; }
+.billing-record-table .record-money-row small { margin:0; color:var(--muted); font-size:10px; line-height:15px; letter-spacing:.04em; text-transform:uppercase; }
+.billing-record-table .record-money-row strong { color:var(--foreground); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.billing-record-table .record-money-row.total { padding-top:4px; border-top:1px solid var(--border); }
+.billing-record-table .record-money-row.total strong { color:var(--primary); }
+.billing-record-table .record-balance { min-width:112px; justify-items:start; }
+.billing-record-table .record-balance>small { color:var(--muted); font-size:10px; line-height:15px; letter-spacing:.04em; text-transform:uppercase; }
+.billing-record-table .record-balance>strong { font-size:16px; line-height:22px; }
+.billing-record-table .record-balance>.amount-paid { color:var(--success); }
+.billing-record-table .record-balance>.status { margin-top:2px; }
+
+@media(max-width:620px) {
+  .billing-record-table .record-id { font-size:13px; }
+  .billing-record-table .record-meta { font-size:10px; }
+  .billing-record-table .record-money-stack { min-width:145px; }
+  .billing-record-table .record-balance { min-width:105px; }
+}
+
 @media(max-width:620px) {
   .responsive-register .table-wrap { margin:12px -17px -17px; }
   .responsive-register .table-wrap table { min-width:680px; }
@@ -922,6 +951,61 @@ h1,h2,h3 { text-wrap:balance; }
   .attention-counts span { min-height:90px; }
   .dashboard-page .metrics strong { font-size:14px; }
   .invoice-workflow .billing-date-fields { grid-template-columns:1fr; }
+}
+
+/* On phones, each billing entry becomes one readable record instead of a
+   clipped desktop row. The desktop/tablet view keeps the real table and its
+   horizontal scroll for the full ledger. */
+@media(max-width:620px) {
+  .responsive-register .billing-record-table { display:block; width:100%; min-width:0!important; }
+  .billing-record-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+  .billing-record-table tbody { display:grid; gap:10px; }
+  .billing-record-table tbody tr { display:grid; grid-template-columns:32px minmax(0,1fr) 95px; grid-template-areas:"select bill balance" "customer customer customer" "period period period" "amounts amounts amounts" "actions actions actions"; gap:0 10px; padding:12px; border:1px solid var(--border); border-radius:11px; background:var(--card); box-shadow:var(--shadow-sm); }
+  .billing-record-table tbody td { display:block; min-width:0; padding:7px 0; border:0; text-align:left; white-space:normal; overflow-wrap:anywhere; }
+  .billing-record-table tbody td::before { display:none; content:none; }
+  .billing-record-table tbody td[data-label="Select"] { grid-area:select; padding-top:8px; }
+  .billing-record-table tbody td[data-label="Bill"],.billing-record-table tbody td[data-label="Receipt"] { grid-area:bill; }
+  .billing-record-table tbody td[data-label="Balance"] { grid-area:balance; padding-top:5px; text-align:right; }
+  .billing-record-table tbody td[data-label="Customer"] { grid-area:customer; margin-top:8px; padding-top:10px; border-top:1px solid var(--border); }
+  .billing-record-table tbody td[data-label="Service period"],.billing-record-table tbody td[data-label="Payment date"] { grid-area:period; }
+  .billing-record-table tbody td[data-label="Amounts"],.billing-record-table tbody td[data-label="Collection"],.billing-record-table tbody td[data-label="Method"] { grid-area:amounts; }
+  .billing-record-table tbody td[data-label="Actions"] { grid-area:actions; margin-top:5px; padding-top:9px; border-top:1px solid var(--border); }
+  .billing-record-table tbody td[data-label="Actions"] .action-row { justify-content:flex-end; gap:8px; }
+  .billing-record-table tbody td[data-label="Actions"] .table-action-button { min-width:86px; }
+  .billing-record-table tbody td[data-label="Actions"] .table-action-button span { position:static; width:auto; height:auto; margin:0; padding:0; overflow:visible; clip:auto; white-space:nowrap; }
+  .billing-record-table tbody td[data-label="Customer"] strong,.billing-record-table tbody td[data-label="Service period"] strong,.billing-record-table tbody td[data-label="Payment date"] strong { font-size:13px; line-height:19px; }
+  .billing-record-table tbody td[data-label="Amounts"],.billing-record-table tbody td[data-label="Collection"] { padding-top:10px; }
+  .billing-record-table .record-money-stack { width:100%; min-width:0; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+  .billing-record-table .record-money-row { display:grid; grid-template-columns:1fr; gap:1px; padding:7px 8px; border:1px solid var(--border); border-radius:8px; background:var(--secondary); }
+  .billing-record-table .record-money-row.total { padding-top:7px; border:1px solid color-mix(in srgb,var(--primary) 28%,var(--border)); background:var(--primary-soft); }
+  .billing-record-table .record-money-row strong { font-size:12px; }
+  .billing-record-table .record-balance { justify-items:end; }
+  .billing-record-table .record-balance>.status { max-width:95px; padding-inline:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .billing-record-table .record-bill-cell .record-meta { width:fit-content; max-width:100%; white-space:nowrap; }
+  .billing-record-table .record-balance>strong { font-size:15px; }
+  .billing-record-table .record-balance>.status { font-size:10px; }
+  .payment-register .billing-record-table tbody tr { grid-template-columns:minmax(0,1fr); grid-template-areas:"bill" "customer" "period" "method" "collection" "actions"; }
+  .payment-register .billing-record-table tbody td[data-label="Method"] { grid-area:method; }
+  .payment-register .billing-record-table tbody td[data-label="Collection"] { grid-area:collection; }
+  .payment-register .billing-record-table tbody td[data-label="Method"] { margin-top:8px; padding-top:9px; border-top:1px solid var(--border); }
+}
+
+@media(min-width:621px) {
+  .billing-record-table .record-meta { white-space:nowrap; }
+  .billing-record-table .row-actions-column { width:130px;min-width:130px; }
+  .invoice-register .billing-record-table { min-width:900px; }
+  .invoice-register .billing-record-table th:nth-child(1),.invoice-register .billing-record-table td:nth-child(1) { width:40px;min-width:40px; }
+  .invoice-register .billing-record-table th:nth-child(2),.invoice-register .billing-record-table td:nth-child(2) { min-width:130px; }
+  .invoice-register .billing-record-table th:nth-child(3),.invoice-register .billing-record-table td:nth-child(3) { min-width:150px; }
+  .invoice-register .billing-record-table th:nth-child(4),.invoice-register .billing-record-table td:nth-child(4) { min-width:155px; }
+  .invoice-register .billing-record-table th:nth-child(5),.invoice-register .billing-record-table td:nth-child(5) { min-width:155px; }
+  .invoice-register .billing-record-table th:nth-child(6),.invoice-register .billing-record-table td:nth-child(6) { min-width:110px; }
+  .payment-register .billing-record-table { min-width:850px; }
+  .payment-register .billing-record-table th:nth-child(1),.payment-register .billing-record-table td:nth-child(1) { min-width:150px; }
+  .payment-register .billing-record-table th:nth-child(2),.payment-register .billing-record-table td:nth-child(2) { min-width:165px; }
+  .payment-register .billing-record-table th:nth-child(3),.payment-register .billing-record-table td:nth-child(3) { min-width:105px; }
+  .payment-register .billing-record-table th:nth-child(4),.payment-register .billing-record-table td:nth-child(4) { min-width:160px; }
+  .payment-register .billing-record-table th:nth-child(5),.payment-register .billing-record-table td:nth-child(5) { min-width:110px; }
 }
 
 @keyframes ui-spin { to { transform:rotate(360deg); } }
