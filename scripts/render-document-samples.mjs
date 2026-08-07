@@ -24,9 +24,9 @@ try {
   const { invoicePdfBytes, receiptPdfBytes } = await server.ssrLoadModule('/src/lib/documents.ts')
   const settings = {
     businessName: 'Sitaram Cable & Broadband',
-    address: 'Chitra, Bhavnagar, Gujarat 364004',
+    address: '5-A Chamunda Society, Press Quater, Chitra, Bhavnagar -364004',
     phoneNumbers: '9825039825',
-    upiId: 'sitaram@upi',
+    upiId: '9825039825@ybl',
     logoUrl: '/logo.png',
   }
   const invoice = {
@@ -94,8 +94,8 @@ try {
 
   await mkdir(outputDirectory, { recursive: true })
   await Promise.all([
-    writeFile(join(outputDirectory, 'sitaram-invoice-sample.pdf'), await invoicePdfBytes(invoice, settings)),
-    writeFile(join(outputDirectory, 'sitaram-payment-receipt-sample.pdf'), await receiptPdfBytes(receipt, settings)),
+    writeFile(join(outputDirectory, 'sitaram-invoice-sample.pdf'), await invoicePdfBytes(invoice, settings, 'Shaktisinh')),
+    writeFile(join(outputDirectory, 'sitaram-payment-receipt-sample.pdf'), await receiptPdfBytes(receipt, settings, 'Shaktisinh')),
   ])
   process.stdout.write(`${outputDirectory}\n`)
 } finally {

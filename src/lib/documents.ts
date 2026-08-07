@@ -216,7 +216,7 @@ function invoiceStatusLabel(status: string, amountLeftPaise: number) {
 }
 
 type StatementData = Record<string, any>
-async function createStatementPdf(variant: StatementVariant, data: StatementData, settings: BusinessSettings) {
+async function createLegacyStatementPdf(variant: StatementVariant, data: StatementData, settings: BusinessSettings) {
   const pdf = await PDFDocument.create(); const gujaratiBytes = await fetch(gujaratiFontUrl).then((response) => response.arrayBuffer())
   const fonts: StatementFonts = { regular: await pdf.embedFont(StandardFonts.Helvetica), bold: await pdf.embedFont(StandardFonts.HelveticaBold), gujarati: fontkit.create(new Uint8Array(gujaratiBytes)) }
   const navy = rgb(.03, .16, .38); const orange = rgb(.96, .3, .06); const green = rgb(.03, .47, .2); const red = rgb(.72, .12, .1)
@@ -338,7 +338,7 @@ async function createStatementPdf(variant: StatementVariant, data: StatementData
     const paymentFields: Array<[string, string]> = [
       ['Payment Method', payment.paymentMode.toUpperCase()],
       ...(payment.paymentReference ? [['UTR / Reference', payment.paymentReference] as [string, string]] : []),
-      ['Recorded By', 'Administrator'],
+      ['Recorded By', 'Shaktisinh'],
       ...(payment.notes ? [['Note', payment.notes] as [string, string]] : []),
     ]
     const customerFields: Array<[string, string]> = [
@@ -421,8 +421,89 @@ async function createStatementPdf(variant: StatementVariant, data: StatementData
   return pdf.save({ useObjectStreams: false })
 }
 
-export async function invoicePdfBytes(invoice: InvoiceDetail, settings: BusinessSettings) { return createStatementPdf('invoice', invoice, settings) }
-export async function receiptPdfBytes(payment: PaymentDetail, settings: BusinessSettings) { return createStatementPdf('receipt', payment, settings) }
+void createLegacyStatementPdf
+
+async function createStatementPdf(variant: StatementVariant, data: StatementData, settings: BusinessSettings, adminName = 'Shaktisinh') {
+  const pdf = await PDFDocument.create()
+  const gujaratiBytes = await fetch(gujaratiFontUrl).then((response) => response.arrayBuffer())
+  const fonts: StatementFonts = { regular: await pdf.embedFont(StandardFonts.Helvetica), bold: await pdf.embedFont(StandardFonts.HelveticaBold), gujarati: fontkit.create(new Uint8Array(gujaratiBytes)) }
+  const navy = rgb(.03, .16, .38); const orange = rgb(.96, .3, .06); const green = rgb(.03, .47, .2); const red = rgb(.78, .08, .08); const amber = rgb(.9, .42, .03)
+  const ink = rgb(.08, .12, .19); const muted = rgb(.28, .34, .4); const line = rgb(.78, .82, .87); const soft = rgb(.97, .98, .99)
+  const orangeSoft = rgb(1, .96, .9); const greenSoft = rgb(.94, .99, .96); const redSoft = rgb(1, .95, .95); const amberSoft = rgb(1, .97, .9)
+  const page = pdf.addPage([595, 842]); const logo = await embedLogo(pdf, settings.logoUrl || '/logo.png')
+  const draw = (value: string, x: number, y: number, size = 10, bold = false, color = ink) => drawMixedText(page, value, x, y, size, bold ? fonts.bold : fonts.regular, fonts.gujarati, color)
+  const width = (value: string, size: number, bold = false) => mixedTextWidth(value, size, bold ? fonts.bold : fonts.regular, fonts.gujarati)
+  const drawRight = (value: string, right: number, y: number, size = 10, bold = false, color = ink) => draw(value, right - width(value, size, bold), y, size, bold, color)
+  const drawCenter = (value: string, center: number, y: number, size = 10, bold = false, color = ink) => draw(value, center - width(value, size, bold) / 2, y, size, bold, color)
+  const money = (paise: number) => rupee(Number(paise || 0))
+  const admin = adminName.trim() || 'Shaktisinh'
+  const serviceLabel = data.serviceType === 'broadband' ? 'Broadband Subscription' : 'Digital Cable TV'
+  const accountStatus = (balance: number, received: number) => balance <= 0 ? 'FULLY PAID' : received > 0 ? 'PARTLY PAID' : 'UNPAID'
+  const statusColor = (status: string) => status === 'FULLY PAID' || status === 'PAID' ? green : status === 'PARTLY PAID' ? amber : red
+  const statusSoft = (status: string) => status === 'FULLY PAID' || status === 'PAID' ? greenSoft : status === 'PARTLY PAID' ? amberSoft : redSoft
+  const drawBar = (title: string, top: number, color = navy) => { page.drawRectangle({ x: 30, y: top - 22, width: 535, height: 22, color }); draw(title, 42, top - 15, 9.5, true, rgb(1, 1, 1)) }
+  const drawStatusBadge = (label: string, top: number, color: ReturnType<typeof rgb>, background: ReturnType<typeof rgb>) => { page.drawRectangle({ x: 423, y: top - 32, width: 142, height: 32, color: background, borderColor: color, borderWidth: .8 }); const icon = label === 'FULLY PAID' ? 'V' : label === 'PARTLY PAID' ? '!' : 'X'; page.drawCircle({ x: 441, y: top - 16, size: 8, color }); drawCenter(icon, 441, top - 19, 7, true, rgb(1, 1, 1)); draw(label, 454, top - 21, 9.2, true, color) }
+  const drawMetadata = (top: number, fields: Array<[string, string, ReturnType<typeof rgb>?]>) => {
+    const cardWidth = 535 / 4
+    page.drawRectangle({ x: 30, y: top - 45, width: 535, height: 45, borderColor: navy, borderWidth: .7 })
+    fields.forEach(([label, value, color], index) => { const x = 30 + cardWidth * index; if (index) page.drawLine({ start: { x, y: top - 38 }, end: { x, y: top - 5 }, thickness: .45, color: line }); drawCenter(label, x + cardWidth / 2, top - 16, 7.5, true, muted); drawCenter(truncateText(value || '', cardWidth - 16, 9.5, fonts.bold, fonts.gujarati), x + cardWidth / 2, top - 35, 9.5, true, color || navy) })
+  }
+  const drawDetailCard = (x: number, top: number, title: string, fields: Array<[string, string]>) => {
+    const visible = fields.filter(([, value]) => Boolean(value?.trim())); const rowHeights = visible.map(([, value]) => Math.max(21, wrapText(value, 145, 8.5, fonts.bold, fonts.gujarati).length * 10 + 10)); const height = 24 + rowHeights.reduce((total, rowHeight) => total + rowHeight, 0)
+    page.drawRectangle({ x, y: top - height, width: 255, height, borderColor: navy, borderWidth: .65 }); page.drawRectangle({ x, y: top - 24, width: 255, height: 24, color: navy }); draw(title, x + 12, top - 16, 9.5, true, rgb(1, 1, 1))
+    let rowTop = top - 24; visible.forEach(([label, value], index) => { const rowHeight = rowHeights[index]; const lines = wrapText(value, 145, 8.5, fonts.bold, fonts.gujarati); draw(label, x + 12, rowTop - 14, 7.8, false, muted); lines.forEach((lineValue, lineIndex) => draw(lineValue, x + 102, rowTop - 14 - lineIndex * 10, 8.5, true, ink)); page.drawLine({ start: { x: x + 12, y: rowTop - rowHeight }, end: { x: x + 243, y: rowTop - rowHeight }, thickness: .35, color: line }); rowTop -= rowHeight })
+    return height
+  }
+  const drawMoneyRow = (top: number, label: string, value: number, options: { subtract?: boolean; color?: ReturnType<typeof rgb>; bold?: boolean; fill?: ReturnType<typeof rgb> } = {}) => {
+    const color = options.color || ink; page.drawRectangle({ x: 30, y: top - 22, width: 535, height: 22, color: options.fill || rgb(1, 1, 1), borderColor: line, borderWidth: .35 }); draw(label, 42, top - 15, 8.3, Boolean(options.bold), color); const amount = `${options.subtract && value > 0 ? '- ' : ''}${money(value)}`; drawRight(amount, 553, top - 15, 8.5, true, color); return top - 22
+  }
+  const drawAllocationTable = (top: number, allocations: PaymentDetail['allocations']) => {
+    page.drawRectangle({ x: 30, y: top - 20, width: 535, height: 20, color: soft, borderColor: line, borderWidth: .45 }); draw('BILL ITEM', 42, top - 13, 7.2, true, navy); drawCenter('INVOICE / SERVICE PERIOD', 388, top - 13, 7.2, true, navy); drawRight('AMOUNT COVERED', 553, top - 13, 7.2, true, navy)
+    let rowTop = top - 20; const rows = allocations.slice(0, 3)
+    if (!rows.length) { drawMoneyRow(rowTop, 'Payment recorded to the customer account', 0); return rowTop - 24 }
+    rows.forEach((item) => { const label = item.chargeType === 'opening_due' ? 'Old Unpaid Amount' : 'Monthly Service'; const period = `${item.invoiceCode} | ${statementDate(item.periodStart)} - ${statementDate(item.periodEnd)}`; const covered = Number(item.cashPaise || 0) + Number(item.discountPaise || 0) + Number(item.creditPaise || 0); page.drawRectangle({ x: 30, y: rowTop - 29, width: 535, height: 29, color: rgb(1, 1, 1), borderColor: line, borderWidth: .35 }); draw(label, 42, rowTop - 12, 7.8, false, ink); drawCenter(truncateText(period, 250, 7.2, fonts.regular, fonts.gujarati), 388, rowTop - 12, 7.2, false, ink); drawRight(money(covered), 553, rowTop - 18, 8.2, true, ink); rowTop -= 29 })
+    return rowTop
+  }
+  const drawStatusGuide = (top: number) => {
+    const height = 47; page.drawRectangle({ x: 30, y: top - height, width: 535, height, borderColor: line, borderWidth: .55 }); drawCenter('PAYMENT STATUS GUIDE', 297.5, top - 11, 8.5, true, navy)
+    const items = [['FULLY PAID', 'NOTHING LEFT UNPAID', green, 'V'], ['PARTLY PAID', 'SOME BALANCE REMAINS', amber, '!'], ['UNPAID', 'PAYMENT DUE', red, 'X']] as const
+    items.forEach(([label, hint, color, icon], index) => { const x = 30 + index * (535 / 3); if (index) page.drawLine({ start: { x, y: top - height + 7 }, end: { x, y: top - 17 }, thickness: .4, color: line }); page.drawCircle({ x: x + 24, y: top - 31, size: 8, color }); drawCenter(icon, x + 24, top - 34, 7, true, rgb(1, 1, 1)); draw(label, x + 38, top - 29, 7.5, true, color); draw(hint, x + 38, top - 40, 6.4, false, muted) })
+    return top - height
+  }
+  const drawFooter = (text: string) => { page.drawLine({ start: { x: 30, y: 50 }, end: { x: 565, y: 50 }, thickness: .8, color: navy }); drawCenter(text, 297.5, 29, 6.8, false, muted) }
+
+  if (logo) page.drawImage(logo, { x: 30, y: 750, width: 78, height: 78 })
+  const businessName = truncateText(settings.businessName || 'Sitaram Cable & Broadband', 300, 15.5, fonts.bold, fonts.gujarati)
+  draw(businessName, 120, 811, 15.5, true, navy); draw('Connecting Every Home', 120, 792, 9, false, muted)
+  const addressLines = settings.address ? wrapText(settings.address, 245, 8, fonts.regular, fonts.gujarati).slice(0, 2) : []
+  addressLines.forEach((value, index) => draw(value, 120, 773 - index * 11, 8, false, ink))
+  const contactY = 773 - addressLines.length * 11; if (settings.phoneNumbers) draw(`Phone / WhatsApp: ${settings.phoneNumbers}`, 120, contactY, 8, false, ink); if (settings.upiId) draw(`UPI: ${settings.upiId}`, 120, contactY - 12, 8, false, ink)
+  const documentTitle = variant === 'invoice' ? 'INVOICE' : 'PAYMENT RECEIPT'; drawRight(documentTitle, 565, 811, variant === 'invoice' ? 20 : 17, true, navy)
+  page.drawLine({ start: { x: 30, y: 719 }, end: { x: 565, y: 719 }, thickness: 1, color: navy })
+
+  if (variant === 'invoice') {
+    const invoice = data as InvoiceDetail; const breakdown = invoiceDisplayBreakdown(invoice); const status = invoiceStatusLabel(invoice.status, breakdown.amountLeftPaise); const statusInk = statusColor(status)
+    drawMetadata(704, [['INVOICE NO', invoice.invoiceCode], ['BILLING DATE', statementDate(invoice.issuedDate)], ['DUE DATE', statementDate(invoice.dueDate)], ['STATUS', status, statusInk]])
+    const detailTop = 635; const customerHeight = drawDetailCard(30, detailTop, 'CUSTOMER', [['Full Name', invoice.customerName], ['Customer ID', invoice.customerCode], ['Mobile', invoice.phone || ''], ['Area', invoice.areaName || ''], ['STB', invoice.stbNumber || '']]); const serviceHeight = drawDetailCard(310, detailTop, 'SERVICE DETAILS', [['Service', serviceLabel], ['Plan', invoice.planName || ''], ['Billing cycle', invoice.monthsBilled === 1 ? '30 days' : `${invoice.monthsBilled} billing cycles`], ['Service period', `${statementDate(invoice.periodStart)} to ${statementDate(invoice.periodEnd)}`], ['Months billed', String(invoice.monthsBilled || 1)]])
+    let y = detailTop - Math.max(customerHeight, serviceHeight) - 20; drawBar('BILL SUMMARY', y); y -= 30; page.drawRectangle({ x: 30, y: y - 20, width: 535, height: 20, color: soft, borderColor: line, borderWidth: .45 }); draw('DESCRIPTION', 42, y - 13, 7.2, true, navy); drawRight('AMOUNT (Rs.)', 553, y - 13, 7.2, true, navy); y -= 20
+    y = drawMoneyRow(y, `Monthly Service - ${invoice.planName || serviceLabel} - ${invoice.monthsBilled === 1 ? '30 days' : `${invoice.monthsBilled} billing cycles`}`, breakdown.monthlyServicePaise); if (breakdown.oldUnpaidPaise > 0) y = drawMoneyRow(y, 'Old Unpaid Amount', breakdown.oldUnpaidPaise); y = drawMoneyRow(y, 'Total Bill', breakdown.totalBillPaise, { bold: true, color: navy, fill: rgb(.95, .97, 1) }); if (breakdown.paymentReceivedPaise > 0) y = drawMoneyRow(y, 'Payment Already Received', breakdown.paymentReceivedPaise, { subtract: true, bold: true, color: red }); if (breakdown.discountGivenPaise > 0) y = drawMoneyRow(y, 'Discount Given', breakdown.discountGivenPaise, { subtract: true, color: red }); if (breakdown.customerCreditUsedPaise > 0) y = drawMoneyRow(y, 'Customer Credit Used', breakdown.customerCreditUsedPaise, { subtract: true, color: red })
+    const balanceTop = y - 8; const balanceColor = breakdown.amountLeftPaise > 0 ? orange : green; page.drawRectangle({ x: 30, y: balanceTop - 54, width: 535, height: 54, color: breakdown.amountLeftPaise > 0 ? orangeSoft : greenSoft, borderColor: balanceColor, borderWidth: .9 }); draw('AMOUNT LEFT TO PAY', 44, balanceTop - 18, 9.8, true, balanceColor); drawRight(breakdown.amountLeftPaise > 0 ? money(breakdown.amountLeftPaise) : 'Rs. 0.00', 535, balanceTop - 37, 17, true, balanceColor); draw(`Total Bill in words: ${wordsForMoney(breakdown.totalBillPaise)}`, 44, balanceTop - 47, 7.5, false, ink)
+    const howTop = balanceTop - 70; drawBar(breakdown.amountLeftPaise > 0 ? 'HOW TO PAY' : 'PAYMENT STATUS', howTop); const bodyBottom = 76; page.drawRectangle({ x: 30, y: bodyBottom, width: 535, height: howTop - 22 - bodyBottom, borderColor: navy, borderWidth: .65 }); const instructions = breakdown.amountLeftPaise > 0 ? [`Pay exactly ${money(breakdown.amountLeftPaise)}`, ...(settings.upiId ? [`UPI: ${settings.upiId}`] : []), `Use reference: ${invoice.invoiceCode}`, `Receipt is issued after ${admin} records payment.`, ...(settings.phoneNumbers ? [`Help: Call or WhatsApp ${settings.phoneNumbers}`] : [])] : [`This bill is fully paid.`, `Invoice reference: ${invoice.invoiceCode}`, ...(settings.phoneNumbers ? [`Help: Call or WhatsApp ${settings.phoneNumbers}`] : [])]; instructions.forEach((item, index) => draw(`${index + 1}. ${item}`, 44, howTop - 40 - index * 16, 7.6, false, ink)); const paymentUri = invoicePaymentUri(invoice, settings); if (paymentUri) { const qrData = await QRCode.toDataURL(paymentUri, { margin: 1, width: 160 }); const qr = await pdf.embedPng(decodeDataUrl(qrData)); page.drawLine({ start: { x: 370, y: bodyBottom + 8 }, end: { x: 370, y: howTop - 30 }, thickness: .5, color: line }); page.drawRectangle({ x: 423, y: bodyBottom + 8, width: 112, height: 101, borderColor: navy, borderWidth: .6 }); page.drawImage(qr, { x: 435, y: bodyBottom + 28, width: 88, height: 68 }); const caption = `${money(breakdown.amountLeftPaise)} - ${invoice.invoiceCode}`; drawCenter(caption, 479, bodyBottom + 16, 6.4, true, navy) }
+    drawFooter(`Thank you for choosing ${settings.businessName || 'Sitaram Cable & Broadband'} | ${settings.upiId || ''} | Support: ${settings.phoneNumbers || ''}`)
+  } else {
+    const payment = data as PaymentDetail; const breakdown = paymentDisplayBreakdown(payment); const status = accountStatus(breakdown.amountStillUnpaidPaise, breakdown.paymentReceivedPaise); const statusInk = statusColor(status)
+    drawStatusBadge(status, 775, statusInk, statusSoft(status)); drawMetadata(704, [['RECEIPT NO', payment.paymentCode], ['PAYMENT DATE', statementDate(payment.paymentDate)], ['PAYMENT METHOD', String(payment.paymentMode || '').toUpperCase()], ['AMOUNT PAID', money(payment.amountReceivedPaise), green]])
+    draw(`Amount in words: ${wordsForMoney(breakdown.paymentReceivedPaise)}`, 30, 642, 8.5, false, muted)
+    const detailTop = 615; const customerHeight = drawDetailCard(30, detailTop, 'CUSTOMER', [['Full Name', payment.customerName], ['Customer ID', payment.customerCode || ''], ['Mobile', payment.phone || ''], ['Area', payment.areaName || ''], ['STB', payment.stbNumber || '']]); const paymentHeight = drawDetailCard(310, detailTop, 'PAYMENT DETAILS', [['Payment Method', String(payment.paymentMode || '').toUpperCase()], ['UTR / Reference', payment.paymentReference || ''], ['Recorded By', admin], ['Note', payment.notes || '']])
+    let y = detailTop - Math.max(customerHeight, paymentHeight) - 18; drawBar('PAYMENT ALLOCATION', y); draw('This payment was applied to the following bills.', 42, y - 36, 7.6, false, muted); const allocationBottom = drawAllocationTable(y - 49, payment.allocations); y = allocationBottom - 14; drawBar('PAYMENT SUMMARY', y); y -= 30; y = drawMoneyRow(y, 'Payment Received', breakdown.paymentReceivedPaise, { bold: true, color: ink, fill: greenSoft }); if (breakdown.discountGivenPaise > 0) y = drawMoneyRow(y, 'Discount Given', breakdown.discountGivenPaise, { color: ink }); if (breakdown.customerCreditUsedPaise > 0) y = drawMoneyRow(y, 'Customer Credit Used', breakdown.customerCreditUsedPaise, { color: ink }); y = drawMoneyRow(y, 'Total Bill Covered', breakdown.totalBillCoveredPaise, { bold: true, color: breakdown.amountStillUnpaidPaise > 0 ? navy : green, fill: rgb(.95, .97, 1) })
+    const finalTop = y - 10; const finalColor = breakdown.amountStillUnpaidPaise > 0 ? red : green; const finalFill = breakdown.amountStillUnpaidPaise > 0 ? redSoft : greenSoft; page.drawRectangle({ x: 30, y: finalTop - 48, width: 535, height: 48, color: finalFill, borderColor: finalColor, borderWidth: .9 }); draw(breakdown.amountStillUnpaidPaise > 0 ? 'AMOUNT STILL UNPAID' : 'PAYMENT COMPLETE', 44, finalTop - 20, 9.5, true, finalColor); drawRight(money(breakdown.amountStillUnpaidPaise), 548, finalTop - 31, 15, true, finalColor); draw(breakdown.amountStillUnpaidPaise > 0 ? `${status} - CUSTOMER ACCOUNT STILL HAS A BALANCE` : 'FULLY PAID - NOTHING LEFT UNPAID', 44, finalTop - 41, 7.2, true, finalColor)
+    drawStatusGuide(finalTop - 61); drawFooter(`Computer Generated Receipt - No Signature Required | ${settings.businessName || 'Sitaram Cable & Broadband'} | Support: ${settings.phoneNumbers || ''}`)
+  }
+  return pdf.save({ useObjectStreams: false })
+}
+
+export async function invoicePdfBytes(invoice: InvoiceDetail, settings: BusinessSettings, adminName = 'Shaktisinh') { return createStatementPdf('invoice', invoice, settings, adminName) }
+export async function receiptPdfBytes(payment: PaymentDetail, settings: BusinessSettings, adminName = 'Shaktisinh') { return createStatementPdf('receipt', payment, settings, adminName) }
 export async function reportPdfBytes(report: Report, settings: BusinessSettings) {
   const rows: Row[] = [{ label: 'Report period', value: `${formatBusinessDate(report.from)} to ${formatBusinessDate(report.to)}` }, { label: 'Scope', value: report.scope.toUpperCase() }, { label: 'Billed', value: pdfMoney(report.billedPaise) }, { label: 'Collected', value: pdfMoney(report.collectedPaise) }, { label: 'Discount given', value: pdfMoney(report.discountGivenPaise) }, { label: 'Expenses', value: pdfMoney(report.expensePaise) }, { label: 'Outstanding', value: pdfMoney(report.outstandingPaise) }, { label: report.netLabel, value: pdfMoney(report.netPaise) }, { label: 'Active subscribers', value: String(report.activeSubscribers) }, { label: 'Subscriber records needing setup', value: String(report.dataQualityCount) }, ...report.payments.map((payment) => ({ label: payment.paymentCode, value: `${formatBusinessDate(payment.paymentDate)} | ${payment.customerName} | Received ${pdfMoney(payment.amountReceivedPaise)} | Discount ${pdfMoney(payment.discountGivenPaise)} | ${payment.paymentMode}` })), ...report.expenses.map((expense) => ({ label: `Expense ${expense.category}`, value: `${formatBusinessDate(expense.expenseDate)} | ${expense.description} | ${pdfMoney(expense.amountPaise)}` }))]
   return createPdfBytes('BUSINESS REPORT', report.scope.toUpperCase(), rows, settings)
@@ -448,10 +529,10 @@ export function pdfPreviewUrl(bytes: Uint8Array) {
   for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
   return `data:application/pdf;base64,${btoa(binary)}`
 }
-export async function downloadInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { saveBytes(`${invoice.invoiceCode}.pdf`, await invoicePdfBytes(invoice, settings)) }
-export async function shareInvoice(invoice: InvoiceDetail, settings: BusinessSettings) { await shareOrDownload(`${invoice.invoiceCode}.pdf`, `${settings.businessName} invoice ${invoice.invoiceCode}`, await invoicePdfBytes(invoice, settings)) }
-export async function downloadReceipt(payment: PaymentDetail, settings: BusinessSettings) { saveBytes(`${payment.paymentCode}.pdf`, await receiptPdfBytes(payment, settings)) }
-export async function shareReceipt(payment: PaymentDetail, settings: BusinessSettings) { await shareOrDownload(`${payment.paymentCode}.pdf`, `${settings.businessName} receipt ${payment.paymentCode}`, await receiptPdfBytes(payment, settings)) }
+export async function downloadInvoice(invoice: InvoiceDetail, settings: BusinessSettings, adminName = 'Shaktisinh') { saveBytes(`${invoice.invoiceCode}.pdf`, await invoicePdfBytes(invoice, settings, adminName)) }
+export async function shareInvoice(invoice: InvoiceDetail, settings: BusinessSettings, adminName = 'Shaktisinh') { await shareOrDownload(`${invoice.invoiceCode}.pdf`, `${settings.businessName} invoice ${invoice.invoiceCode}`, await invoicePdfBytes(invoice, settings, adminName)) }
+export async function downloadReceipt(payment: PaymentDetail, settings: BusinessSettings, adminName = 'Shaktisinh') { saveBytes(`${payment.paymentCode}.pdf`, await receiptPdfBytes(payment, settings, adminName)) }
+export async function shareReceipt(payment: PaymentDetail, settings: BusinessSettings, adminName = 'Shaktisinh') { await shareOrDownload(`${payment.paymentCode}.pdf`, `${settings.businessName} receipt ${payment.paymentCode}`, await receiptPdfBytes(payment, settings, adminName)) }
 export async function downloadStatement(customer: Customer, invoices: Invoice[], payments: Payment[], settings: BusinessSettings) { saveBytes(`${customer.customerCode}-statement.pdf`, await statementPdfBytes(customer, invoices, payments, settings)) }
 export async function shareStatement(customer: Customer, invoices: Invoice[], payments: Payment[], settings: BusinessSettings) { await shareOrDownload(`${customer.customerCode}-statement.pdf`, `${settings.businessName} statement ${customer.customerCode}`, await statementPdfBytes(customer, invoices, payments, settings)) }
 

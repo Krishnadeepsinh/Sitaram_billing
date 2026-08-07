@@ -405,7 +405,7 @@ export function DashboardPage({
   );
 }
 
-export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
+export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceType; adminName: string }) {
   const today = todayInBusinessTimezone();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [areas, setAreas] = useState<
@@ -939,7 +939,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                 className="secondary"
                 onClick={() =>
                   void documents().then(async ({ invoicePdfBytes, pdfPreviewUrl }) => {
-                    const url = pdfPreviewUrl(await invoicePdfBytes(detail, settings));
+                    const url = pdfPreviewUrl(await invoicePdfBytes(detail, settings, adminName));
                     setPdfPreview({ title: `${detail.invoiceCode} preview`, url });
                   }).catch((cause: Error) => setNotice({ kind: "error", message: cause.message || "Could not preview the invoice PDF." }))
                 }
@@ -950,7 +950,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                 className="secondary"
                 onClick={() =>
                   void documents().then(({ downloadInvoice }) =>
-                    downloadInvoice(detail, settings),
+                    downloadInvoice(detail, settings, adminName),
                   ).catch((cause: Error) =>
                     setNotice({ kind: "error", message: cause.message || "Could not create the invoice PDF." }),
                   )
@@ -962,7 +962,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
                 className="primary"
                 onClick={() =>
                   void documents().then(({ shareInvoice }) =>
-                    shareInvoice(detail, settings),
+                    shareInvoice(detail, settings, adminName),
                   ).catch((cause: Error) =>
                     setNotice({ kind: "error", message: cause.message || "Could not share the invoice." }),
                   )
@@ -1158,7 +1158,7 @@ export function InvoicesPage({ serviceType }: { serviceType: ServiceType }) {
   );
 }
 
-export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
+export function PaymentsPage({ serviceType, adminName }: { serviceType: ServiceType; adminName: string }) {
   const today = todayInBusinessTimezone();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -1548,7 +1548,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                 className="secondary"
                 onClick={() =>
                   void documents().then(async ({ pdfPreviewUrl, receiptPdfBytes }) => {
-                    const url = pdfPreviewUrl(await receiptPdfBytes(detail, settings));
+                    const url = pdfPreviewUrl(await receiptPdfBytes(detail, settings, adminName));
                     setPdfPreview({ title: `${detail.paymentCode} preview`, url });
                   }).catch((cause: Error) => setNotice({ kind: "error", message: cause.message || "Could not preview the payment receipt." }))
                 }
@@ -1559,7 +1559,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                 className="secondary"
                 onClick={() =>
                   void documents().then(({ downloadReceipt }) =>
-                    downloadReceipt(detail, settings),
+                    downloadReceipt(detail, settings, adminName),
                   ).catch((cause: Error) =>
                     setNotice({ kind: "error", message: cause.message || "Could not create the payment receipt." }),
                   )
@@ -1571,7 +1571,7 @@ export function PaymentsPage({ serviceType }: { serviceType: ServiceType }) {
                 className="primary"
                 onClick={() =>
                   void documents().then(({ shareReceipt }) =>
-                    shareReceipt(detail, settings),
+                    shareReceipt(detail, settings, adminName),
                   ).catch((cause: Error) =>
                     setNotice({ kind: "error", message: cause.message || "Could not share the payment receipt." }),
                   )
