@@ -403,6 +403,111 @@ export function PlansPage({ serviceType }: { serviceType: ServiceType }) {
   );
 }
 
+export function AreasPage({ serviceType }: { serviceType: ServiceType }) {
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [editing, setEditing] = useState<Area>();
+  const [deleting, setDeleting] = useState<Area>();
+  const [formOpen, setFormOpen] = useState(false);
+  const [notice, setNotice] = useState<Notice>();
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const refresh = useCallback(() => {
+    setLoading(true);
+    listAreas(serviceType)
+      .then(setAreas)
+      .catch((error: Error) => setNotice({ kind: "error", message: error.message }))
+      .finally(() => setLoading(false));
+  }, [serviceType]);
+
+  useEffect(() => {
+    setEditing(undefined);
+    setDeleting(undefined);
+    setFormOpen(false);
+    refresh();
+  }, [refresh]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const displayName = String(new FormData(event.currentTarget).get("displayName") ?? "").trim();
+    if (!displayName) {
+      setNotice({ kind: "error", message: "Enter an area name first." });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      if (editing) await updateArea(serviceType, editing.id, displayName);
+      else await createArea(serviceType, displayName);
+      setEditing(undefined);
+      setFormOpen(false);
+      setNotice({ kind: "success", message: editing ? "Area updated." : "Area added." });
+      refresh();
+    } catch (error) {
+      setNotice({ kind: "error", message: error instanceof Error ? error.message : "Unable to save area." });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function remove(area: Area) {
+    setSubmitting(true);
+    try {
+      await deleteArea(serviceType, area.id);
+      setDeleting(undefined);
+      setNotice({ kind: "success", message: `${area.displayName} removed.` });
+      refresh();
+    } catch (error) {
+      setNotice({ kind: "error", message: error instanceof Error ? error.message : "Unable to remove area." });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="page-content areas-page">
+      <PageTitle
+        title="Areas"
+        subtitle="Add and manage the service areas used for subscribers."
+        action={<button className="primary" onClick={() => { setEditing(undefined); setFormOpen(true); }}><Plus size={16} aria-hidden="true" /> Add Area</button>}
+      />
+      {notice && <NoticeMessage notice={notice} />}
+      <article className="panel areas-panel">
+        <div className="register-heading">
+          <div><h2>Service Areas</h2><p className="panel-help">Choose an area when adding a subscriber.</p></div>
+          <span>{areas.length} {areas.length === 1 ? "area" : "areas"}</span>
+        </div>
+        {loading ? <p className="empty-inline loading-inline" role="status">Loading areas…</p> : areas.length ? (
+          <div className="areas-list" aria-label="Service areas">
+            {areas.map((area) => <div className="area-row" key={area.id}>
+              <div className="area-row-name"><span className="area-row-icon" aria-hidden="true"><Network size={16} /></span><strong>{area.displayName}</strong></div>
+              <div className="area-row-actions">
+                <button className="secondary" onClick={() => { setEditing(area); setFormOpen(true); }}><Pencil size={15} aria-hidden="true" /> Edit</button>
+                <button className="secondary danger-outline" onClick={() => setDeleting(area)}><Trash2 size={15} aria-hidden="true" /> Remove</button>
+              </div>
+            </div>)}
+          </div>
+        ) : <Empty label="No areas yet" text="Add an area before creating subscribers." />}
+      </article>
+      {formOpen && <Modal title={editing ? "Edit Area" : "Add Area"} onClose={() => { setFormOpen(false); setEditing(undefined); }}>
+        <form className="modal-form single-column" onSubmit={submit}>
+          <div className="modal-form-body">
+            <p className="form-help">Use a short name your team will recognize, such as a village, street, or locality.</p>
+            <label className="full-field">Area name<input name="displayName" autoFocus autoComplete="off" required maxLength={100} defaultValue={editing?.displayName} placeholder="e.g. Chamunda" /></label>
+          </div>
+          <div className="modal-actions full-field"><button type="button" className="secondary" onClick={() => { setFormOpen(false); setEditing(undefined); }}>Cancel</button><button className="primary" disabled={submitting}>{submitting ? "Saving…" : editing ? "Save Changes" : "Add Area"}</button></div>
+        </form>
+      </Modal>}
+      {deleting && <Modal title="Remove Area" onClose={() => setDeleting(undefined)}>
+        <div className="confirm-content">
+          <span className="confirm-icon"><Trash2 size={20} aria-hidden="true" /></span>
+          <div><h3>Remove {deleting.displayName}?</h3><p>You can remove an area only after its current and archived subscribers are assigned to another area.</p></div>
+          <div className="modal-actions"><button className="secondary" onClick={() => setDeleting(undefined)}>Cancel</button><button className="primary danger-button" disabled={submitting} onClick={() => void remove(deleting)}>{submitting ? "Removing…" : "Remove Area"}</button></div>
+        </div>
+      </Modal>}
+    </section>
+  );
+}
+
 export function CustomersPage({ serviceType, initialQuery = "", initialAction = "" }: { serviceType: ServiceType; initialQuery?: string; initialAction?: string }) {
   const [areas, setAreas] = useState<Area[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);

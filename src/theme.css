@@ -910,7 +910,6 @@ h1,h2,h3 { text-wrap:balance; }
   .invoice-workflow .recharge-preview .eligibility,.invoice-workflow .recharge-preview .advanced-options { display:none; }
   .invoice-workflow .payment-with-recharge { border:0;padding-inline:0; }
 
-  .modal:has(>.customer-form) .area-manager { display:none; }
   .customer-form { grid-template-columns:1fr; }
   .customer-form .opening-balance-field { display:none; }
   .customer-form label { color:#10213e;font-size:12px; }
