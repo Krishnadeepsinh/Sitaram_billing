@@ -433,7 +433,9 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
   const [invoiceOffset, setInvoiceOffset] = useState(0);
   const [bulkSelection, setBulkSelection] = useState<number[]>([]);
   const [bulkThroughMonth, setBulkThroughMonth] = useState(today.slice(0, 7));
+  const [bulkAreaId, setBulkAreaId] = useState("");
   const [bulkPreview, setBulkPreview] = useState<BulkInvoiceResult>();
+  const [bulkResult, setBulkResult] = useState<BulkInvoiceResult>();
   const [confirming, setConfirming] = useState<Invoice | "merge">();
   const [deleteReason, setDeleteReason] = useState("");
   const [deletePreview, setDeletePreview] = useState<InvoiceDeletePreview>();
@@ -490,7 +492,10 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
       customer.nextBillingStartDate,
   );
   const dueBillable = billable.filter(
-    (customer) => customer.nextBillingStartDate! <= today,
+    (customer) => customer.nextBillingStartDate! <= today && customer.nextBillingStartDate!.slice(0, 7) === today.slice(0, 7),
+  );
+  const bulkEligibleCustomers = billable.filter(
+    (customer) => customer.nextBillingStartDate!.slice(0, 7) === bulkThroughMonth && (!bulkAreaId || customer.areaId === Number(bulkAreaId)),
   );
 
   async function submitBulk(event: FormEvent<HTMLFormElement>) {
@@ -501,23 +506,21 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
       if (!bulkPreview) {
         const preview = await bulkCreateInvoices(serviceType, bulkThroughMonth, bulkSelection, true);
         setBulkPreview(preview);
+        setBulkSelection(preview.ready.map((customer) => customer.customerId));
         return;
       }
       const result = await bulkCreateInvoices(
         serviceType,
         bulkThroughMonth,
-        bulkSelection,
+        bulkPreview.ready.map((customer) => customer.customerId),
       );
-      setBillingDialog(undefined);
       setBulkSelection([]);
       setBulkPreview(undefined);
-      const failedSummary = result.failed.slice(0, 3).map((item) =>
-        `${item.customerName ?? `Subscriber ${item.customerId}`}${item.customerCode ? ` (${item.customerCode})` : ""}: ${item.reason}`,
-      ).join(" ");
+      setBulkResult(result);
       setNotice({
         kind: result.failed.length ? "error" : "success",
         message: result.failed.length
-          ? `${result.generated.length} bill(s) created. ${result.failed.length} customer(s) were not billed. ${failedSummary}${result.failed.length > 3 ? ` ${result.failed.length - 3} more need review.` : ""}`
+          ? `${result.generated.length} bill(s) created. ${result.failed.length} customer(s) need attention; see the full billing result.`
           : `${result.generated.length} bill(s) created. ${result.skipped.length} customer(s) had no complete 30-day period to bill.`,
       });
       refresh();
@@ -685,7 +688,9 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
               onClick={() => {
                 setBulkSelection([]);
                 setBulkPreview(undefined);
+                setBulkResult(undefined);
                 setBulkThroughMonth(today.slice(0, 7));
+                setBulkAreaId("");
                 setBillingDialog("bulk");
               }}
             >
@@ -702,7 +707,9 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
               onClick={() => {
                 setBulkSelection(dueBillable.map((customer) => customer.id));
                 setBulkPreview(undefined);
+                setBulkResult(undefined);
                 setBulkThroughMonth(today.slice(0, 7));
+                setBulkAreaId("");
                 setBillingDialog("due");
               }}
             >
@@ -930,7 +937,7 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                       </td>
                       <td data-label="Service period">
                         <strong>{formatBusinessDate(invoice.periodStart)} - {formatBusinessDate(invoice.periodEnd)}</strong>
-                        <small className="record-meta">{billingCyclePosition(invoice.periodStart, invoice.periodEnd)}</small>
+                        <small className="record-meta">Bill month: {formatBusinessDate(`${invoice.billingMonth}-01`).slice(3)} · {billingCyclePosition(invoice.periodStart, invoice.periodEnd)}</small>
                       </td>
                       <td className="record-amounts-cell" data-label="Amounts">
                         <div className="record-modern-content record-money-stack">
@@ -1084,25 +1091,36 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
         </Modal>
       )}
       {(billingDialog === "bulk" || billingDialog === "due") && (
-        <Modal wide title={billingDialog === "due" ? "Review Due Recharges" : "Recharge Many Customers"} onClose={() => { setBillingDialog(undefined); setBulkPreview(undefined); }}>
+        <Modal wide title={bulkResult ? "Bulk Billing Complete" : billingDialog === "due" ? "Review Due Recharges" : "Recharge Many Customers"} onClose={() => { setBillingDialog(undefined); setBulkPreview(undefined); setBulkResult(undefined); }}>
           <form className="modal-form single-column" onSubmit={submitBulk}>
             <div className="modal-form-body">
+            {bulkResult ? <><p className="form-help">One 30-day recharge was created for each customer whose next service period starts in {formatBusinessDate(`${bulkThroughMonth}-01`).slice(3)}.</p><section className="bulk-review" aria-live="polite"><div className="bulk-review-summary"><span><strong>{bulkResult.generated.length}</strong> Bills Created</span><span><strong>{bulkResult.failed.length}</strong> Need Attention</span><span><strong>{bulkResult.skipped.length}</strong> Not Billable Yet</span><span><strong>{formatRupees(bulkResult.generated.reduce((sum, item) => sum + item.amountPaise, 0))}</strong> Billed Total</span></div><div className="bulk-review-list">{bulkResult.generated.map((item) => <div className="ready" key={`created-${item.invoiceCode}`}><span><strong>{item.customerName}</strong><small>{item.customerCode} · {item.invoiceCode} · {item.cycles * 30} days</small></span><span>{formatBusinessDate(item.periodStart)} – {formatBusinessDate(item.periodEnd)}</span><strong>{formatRupees(item.amountPaise)}</strong></div>)}{bulkResult.failed.map((item) => <div className="blocked" key={`failed-${item.customerId}`}><span><strong>{item.customerName ?? `Customer ${item.customerId}`}</strong><small>{item.customerCode || "Needs review"}</small></span><span>{item.reason}</span><strong>Not created</strong></div>)}{bulkResult.skipped.map((item) => <div className="skipped" key={`skipped-${item.customerId}`}><span><strong>{item.customerName}</strong><small>{item.customerCode}</small></span><span>{item.reason}</span><strong>Skipped</strong></div>)}</div></section></> : <>
             <label>
-              Include Complete 30-Day Periods Ending By *
+              Bill for Month *
               <input
                 name="throughMonth"
                 type="month"
                 autoComplete="off"
                 value={bulkThroughMonth}
-                onChange={(event) => { setBulkThroughMonth(event.target.value); setBulkPreview(undefined); }}
+                onChange={(event) => { setBulkThroughMonth(event.target.value); setBulkSelection([]); setBulkPreview(undefined); }}
+                onBlur={(event) => { setBulkThroughMonth(event.target.value); setBulkSelection([]); setBulkPreview(undefined); }}
+                disabled={submitting}
                 required
               />
             </label>
-            <fieldset className="bulk-customer-picker">
-              <legend>Choose Customers</legend>
-              <div className="bulk-picker-heading"><p>{bulkSelection.length ? `${bulkSelection.length} selected` : "No customers selected"}</p><span><button type="button" className="text-button" onClick={() => { setBulkSelection(billable.map((customer) => customer.id)); setBulkPreview(undefined); }}>Select All Listed</button><button type="button" className="text-button" onClick={() => { setBulkSelection([]); setBulkPreview(undefined); }}>Clear</button></span></div>
+            <label>
+              Area
+              <select name="bulkAreaId" value={bulkAreaId} onChange={(event) => { setBulkAreaId(event.target.value); setBulkSelection([]); setBulkPreview(undefined); }} disabled={submitting}>
+                <option value="">All areas</option>
+                {areas.map((area) => <option key={area.id} value={area.id}>{area.displayName}</option>)}
+              </select>
+              <small className="field-help">Optional: limit this bulk bill to one society or service area.</small>
+            </label>
+            <fieldset className="bulk-customer-picker" disabled={submitting}>
+              <legend>Eligible Customers</legend>
+              <div className="bulk-picker-heading"><p>{bulkPreview ? `${bulkPreview.ready.length} ready to bill from ${bulkPreview.ready.length + bulkPreview.failed.length + bulkPreview.skipped.length} checked` : bulkSelection.length ? `${bulkSelection.length} selected from ${bulkEligibleCustomers.length} eligible` : `${bulkEligibleCustomers.length} eligible for this month`}</p><span><button type="button" className="text-button" onClick={() => { setBulkSelection(bulkEligibleCustomers.map((customer) => customer.id)); setBulkPreview(undefined); }}>Select All Eligible</button><button type="button" className="text-button" onClick={() => { setBulkSelection([]); setBulkPreview(undefined); }}>Clear</button></span></div>
               <div>
-                {billable.map((customer) => (
+                {bulkEligibleCustomers.length ? bulkEligibleCustomers.map((customer) => (
                   <label key={customer.id}>
                     <input
                       name="bulkCustomerIds"
@@ -1126,13 +1144,15 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                       </small>
                     </span>
                   </label>
-                ))}
+                )) : <p className="form-help">No customers in this area are eligible for the selected month.</p>}
               </div>
             </fieldset>
-            <p className="form-help">Nothing is created until you review the result. A conflict blocks that customer completely; other ready customers can still be processed.</p>
+            <p className="form-help">Each ready customer receives one 30-day recharge that starts in the selected month. For a specific service date, use Add Recharge for that customer.</p>
             {bulkPreview ? <section className="bulk-review" aria-live="polite"><div className="bulk-review-summary"><span><strong>{bulkPreview.ready.length}</strong> Ready</span><span><strong>{bulkPreview.failed.length}</strong> Need Attention</span><span><strong>{bulkPreview.skipped.length}</strong> No Complete Period</span><span><strong>{formatRupees(bulkPreview.ready.reduce((sum, item) => sum + item.amountPaise, 0))}</strong> Recharge Total</span></div><div className="bulk-review-list">{bulkPreview.ready.map((item) => <div className="ready" key={`ready-${item.customerId}`}><span><strong>{item.customerName}</strong><small>{item.customerCode} · {item.cycles * 30} days</small></span><span>{formatBusinessDate(item.periodStart)} – {formatBusinessDate(item.periodEnd)}</span><strong>{formatRupees(item.amountPaise)}</strong></div>)}{bulkPreview.failed.map((item) => <div className="blocked" key={`failed-${item.customerId}`}><span><strong>{item.customerName ?? `Customer ${item.customerId}`}</strong><small>{item.customerCode || "Needs review"}</small></span><span>{item.reason}</span><strong>Blocked</strong></div>)}{bulkPreview.skipped.map((item) => <div className="skipped" key={`skipped-${item.customerId}`}><span><strong>{item.customerName}</strong><small>{item.customerCode}</small></span><span>{item.reason}</span><strong>Skipped</strong></div>)}</div></section> : null}
+            </>}
             </div>
             <div className="modal-actions">
+              {bulkResult ? <button type="button" className="primary" onClick={() => { setBillingDialog(undefined); setBulkResult(undefined); }}>Done</button> : <>
               <button
                 type="button"
                 className="secondary"
@@ -1151,6 +1171,7 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                     ? `Create ${bulkPreview.ready.length} Bill${bulkPreview.ready.length === 1 ? "" : "s"}`
                     : `Review ${bulkSelection.length} Customer${bulkSelection.length === 1 ? "" : "s"}`}
               </button>
+              </>}
             </div>
           </form>
         </Modal>

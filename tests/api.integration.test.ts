@@ -302,7 +302,7 @@ describe('financial API flow', () => {
     const created = new ResponseMock()
     await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Bulk Preview Customer', areaId: 1, planId: 1, installationDate: today, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
     const customerId = Number((created.body as { id: number }).id)
-    const throughMonth = addBillingDays(today, 60).slice(0, 7)
+    const throughMonth = today.slice(0, 7)
     const before = Number((await database().execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].count)
 
     const preview = new ResponseMock()
@@ -310,6 +310,55 @@ describe('financial API flow', () => {
     expect(preview.statusCode).toBe(200)
     expect(preview.body).toEqual(expect.objectContaining({ generated: [], ready: [expect.objectContaining({ customerId, customerName: 'Bulk Preview Customer', periodStart: today, cycles: expect.any(Number), amountPaise: expect.any(Number) })], failed: [] }))
     expect(Number((await database().execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].count)).toBe(before)
+
+    const billed = new ResponseMock()
+    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, customerIds: [customerId] }), billed as unknown as VercelResponse)
+    expect(billed.statusCode).toBe(201)
+    expect(billed.body).toEqual(expect.objectContaining({ generated: [expect.objectContaining({ customerId, customerName: 'Bulk Preview Customer', customerCode: expect.any(String), invoiceCode: expect.any(String), periodStart: today, periodEnd: expect.any(String), cycles: expect.any(Number), amountPaise: expect.any(Number) })] }))
+  })
+
+  it('records a selected billing month and rejects a mismatched service month', async () => {
+    const today = todayInBusinessTimezone()
+    const created = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Billing Month Customer', areaId: 1, planId: 1, installationDate: today, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
+    const customerId = Number((created.body as { id: number }).id)
+    const invoice = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, { serviceType: 'cable', customerId, monthsBilled: 1, expectedPeriodStart: today, billingMonth: today.slice(0, 7) }), invoice as unknown as VercelResponse)
+    expect(invoice.statusCode).toBe(201)
+    expect((await database().execute({ sql: 'SELECT billing_month AS billingMonth FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].billingMonth).toBe(today.slice(0, 7))
+
+    const mismatch = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Mismatched Billing Month', areaId: 1, planId: 1, installationDate: today, openingBalancePaise: 0, openingBalanceType: 'due' }), mismatch as unknown as VercelResponse)
+    const mismatchId = Number((mismatch.body as { id: number }).id)
+    const rejected = new ResponseMock()
+    await invoiceHandler(request('POST', cookie, { serviceType: 'cable', customerId: mismatchId, monthsBilled: 1, expectedPeriodStart: today, billingMonth: addBillingDays(today, 32).slice(0, 7) }), rejected as unknown as VercelResponse)
+    expect(rejected.statusCode).toBe(409)
+    expect(rejected.body).toEqual({ error: expect.stringContaining('starts in') })
+  })
+
+  it('reports exactly which selected subscribers are ready for bulk billing', async () => {
+    const today = todayInBusinessTimezone()
+    const throughMonth = today.slice(0, 7)
+    const ready = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Bulk Ready', areaId: 1, planId: 1, installationDate: today, openingBalancePaise: 0, openingBalanceType: 'due' }), ready as unknown as VercelResponse)
+    const setupNeeded = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Bulk Setup Needed', areaId: 1, planId: null, installationDate: null, openingBalancePaise: 0, openingBalanceType: 'due' }), setupNeeded as unknown as VercelResponse)
+    const inactive = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Bulk Inactive', areaId: 1, planId: 1, installationDate: today, openingBalancePaise: 0, openingBalanceType: 'due' }), inactive as unknown as VercelResponse)
+    const inactiveId = Number((inactive.body as { id: number }).id)
+    await customerHandler(request('PUT', cookie, { id: inactiveId, serviceType: 'cable', name: 'Bulk Inactive', areaId: 1, planId: 1, installationDate: today, status: 'inactive' }), new ResponseMock() as unknown as VercelResponse)
+
+    const preview = new ResponseMock()
+    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, customerIds: [Number((ready.body as { id: number }).id), Number((setupNeeded.body as { id: number }).id), inactiveId], preview: true }), preview as unknown as VercelResponse)
+
+    expect(preview.statusCode).toBe(200)
+    expect(preview.body).toEqual(expect.objectContaining({
+      ready: [expect.objectContaining({ customerName: 'Bulk Ready' })],
+      failed: expect.arrayContaining([
+        expect.objectContaining({ customerName: 'Bulk Setup Needed', reason: expect.stringContaining('installation and billing setup') }),
+        expect.objectContaining({ customerName: 'Bulk Inactive', reason: expect.stringContaining('inactive') }),
+      ]),
+    }))
   })
 
   it('rejects missed periods before installation or whose full cycle has not ended', async () => {

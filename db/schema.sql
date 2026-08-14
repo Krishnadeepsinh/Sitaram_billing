@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   stb_number_snapshot TEXT,
   period_start TEXT NOT NULL,
   period_end TEXT NOT NULL,
+  billing_month TEXT NOT NULL DEFAULT '',
   issued_date TEXT NOT NULL,
   months_billed INTEGER NOT NULL CHECK (months_billed > 0),
   current_period_amount_paise INTEGER NOT NULL CHECK (current_period_amount_paise >= 0),

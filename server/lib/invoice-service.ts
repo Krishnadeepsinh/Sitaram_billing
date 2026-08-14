@@ -16,6 +16,7 @@ export type CreateInvoiceInput = {
   expectedPeriodStart: string
   periodStart?: string
   issuedDate?: string
+  billingMonth?: string
   billingMode?: 'normal' | 'historical'
   historicalReason?: string
   restartService?: boolean
@@ -40,6 +41,9 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
   const expectedPeriodStart = parseStrictDate(input.expectedPeriodStart)
   let currentNextStart = parseStrictDate(String(row.next_billing_start_date))
   const requestedStart = parseStrictDate(input.periodStart ?? expectedPeriodStart)
+  const billingMonth = input.billingMonth ?? requestedStart.slice(0, 7)
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(billingMonth)) throw new InvoiceRequestError(400, 'Choose a valid billing month.')
+  if (billingMode === 'normal' && billingMonth !== requestedStart.slice(0, 7)) throw new InvoiceRequestError(409, `This recharge starts in ${requestedStart.slice(0, 7)}. Select that billing month or use the precise date option.`)
   const invoiceCount = await transaction.execute({ sql: 'SELECT COUNT(*) AS count, MAX(period_end) AS latestPeriodEnd FROM invoices WHERE customer_id = ? AND is_deleted = 0 AND is_merged = 0', args: [input.customerId] })
   const hasInvoiceHistory = Number(invoiceCount.rows[0].count) > 0
   if (billingMode === 'normal') {
@@ -123,8 +127,8 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
   const now = new Date().toISOString()
   const sequence = await transaction.execute({ sql: 'INSERT INTO id_sequences (entity_type, service_type, last_number) VALUES (?, ?, 1) ON CONFLICT(entity_type, service_type) DO UPDATE SET last_number = last_number + 1 RETURNING last_number', args: ['invoice', input.serviceType] })
   const invoiceCode = `INV-${String(sequence.rows[0].last_number).padStart(3, '0')}`
-  const inserted = await transaction.execute({ sql: `INSERT INTO invoices (invoice_code, customer_id, service_type, customer_name_snapshot, area_id_snapshot, area_name_snapshot, plan_name_snapshot, stb_number_snapshot, period_start, period_end, issued_date, months_billed, current_period_amount_paise, previous_due_snapshot_paise, total_payable_paise, due_date, status, billing_mode, historical_reason, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, args: [invoiceCode, input.customerId, input.serviceType, row.name, row.area_id, row.area_name, planName, row.stb_number, period.periodStart, period.periodEnd, issuedDate, input.monthsBilled, serviceAmount, previousDue, serviceAmount + previousDue, period.dueDate, serviceAmount + previousDue === 0 ? 'paid' : 'unpaid', billingMode, input.historicalReason?.trim() ?? null, now] })
+  const inserted = await transaction.execute({ sql: `INSERT INTO invoices (invoice_code, customer_id, service_type, customer_name_snapshot, area_id_snapshot, area_name_snapshot, plan_name_snapshot, stb_number_snapshot, period_start, period_end, billing_month, issued_date, months_billed, current_period_amount_paise, previous_due_snapshot_paise, total_payable_paise, due_date, status, billing_mode, historical_reason, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, args: [invoiceCode, input.customerId, input.serviceType, row.name, row.area_id, row.area_name, planName, row.stb_number, period.periodStart, period.periodEnd, billingMonth, issuedDate, input.monthsBilled, serviceAmount, previousDue, serviceAmount + previousDue, period.dueDate, serviceAmount + previousDue === 0 ? 'paid' : 'unpaid', billingMode, input.historicalReason?.trim() ?? null, now] })
   const invoiceId = Number(inserted.rows[0].id)
   await transaction.execute({ sql: "INSERT INTO invoice_charges (invoice_id, charge_type, description, amount_paise) VALUES (?, 'service', ?, ?)", args: [invoiceId, `${planName} service charge`, serviceAmount] })
   if (openingDue) await transaction.execute({ sql: "INSERT INTO invoice_charges (invoice_id, charge_type, description, amount_paise) VALUES (?, 'opening_due', 'Opening balance due', ?)", args: [invoiceId, openingDue] })
@@ -136,6 +140,6 @@ export async function createInvoiceInTransaction(transaction: DatabaseTransactio
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'system_credit', 'Automatic credit application', 'settled', ?)`, args: [paymentCode, input.customerId, input.serviceType, row.customer_code, row.name, row.area_id, row.area_name, row.stb_number, todayInBusinessTimezone(), now] })
     await rebuildCustomerLedger(transaction, input.customerId)
   }
-  await recordAudit(transaction, { entityType: 'invoice', entityId: invoiceId, action: billingMode === 'historical' ? 'historical_invoice_created' : 'invoice_created', reason: input.historicalReason, details: { invoiceCode, planId, planName, issuedDate, periodStart: period.periodStart, periodEnd: period.periodEnd, serviceAmount, serviceRestart: input.restartService === true } })
+  await recordAudit(transaction, { entityType: 'invoice', entityId: invoiceId, action: billingMode === 'historical' ? 'historical_invoice_created' : 'invoice_created', reason: input.historicalReason, details: { invoiceCode, billingMonth, planId, planName, issuedDate, periodStart: period.periodStart, periodEnd: period.periodEnd, serviceAmount, serviceRestart: input.restartService === true } })
   return { invoiceId, invoiceCode, periodStart: period.periodStart, periodEnd: period.periodEnd, nextEligibleDate: position.nextBillingStartDate, replayed: false }
 }

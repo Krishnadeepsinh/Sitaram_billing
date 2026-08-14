@@ -17,7 +17,9 @@ if (existingInvoices.rows[0]) {
       ['billing_mode', "ALTER TABLE invoices ADD COLUMN billing_mode TEXT NOT NULL DEFAULT 'normal' CHECK (billing_mode IN ('normal', 'historical'))"],
       ['historical_reason', 'ALTER TABLE invoices ADD COLUMN historical_reason TEXT'],
       ['is_combined', 'ALTER TABLE invoices ADD COLUMN is_combined INTEGER NOT NULL DEFAULT 0 CHECK (is_combined IN (0, 1))'],
+      ['billing_month', "ALTER TABLE invoices ADD COLUMN billing_month TEXT NOT NULL DEFAULT ''"],
     ]) if (!invoiceColumns.has(name)) await transaction.execute(sql)
+    await transaction.execute("UPDATE invoices SET billing_month = substr(period_start, 1, 7) WHERE billing_month = ''")
     const paymentColumns = new Set((await transaction.execute('PRAGMA table_info(payments)')).rows.map((row) => String(row.name)))
     if (!paymentColumns.has('request_key')) await transaction.execute('ALTER TABLE payments ADD COLUMN request_key TEXT')
     await transaction.commit()

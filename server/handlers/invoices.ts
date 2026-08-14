@@ -13,7 +13,7 @@ import { recomputeBillingPosition } from '../lib/coverage.js'
 
 const inputSchema = z.object({
   serviceType: serviceTypeSchema, customerId: z.number().int().positive(), monthsBilled: z.number().int().min(1).max(24),
-  expectedPeriodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), issuedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  expectedPeriodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), issuedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), billingMonth: z.string().regex(/^\d{4}-\d{2}$/).optional(),
   billingMode: z.enum(['normal', 'historical']).default('normal'), historicalReason: z.string().trim().max(250).optional(), restartService: z.boolean().optional(),
 })
 
@@ -73,7 +73,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
         const invoiceId = z.coerce.number().int().positive().parse(request.query.id)
         const invoice = await db.execute({ sql: `SELECT invoices.id, invoices.invoice_code AS invoiceCode, invoices.customer_id AS customerId, customers.customer_code AS customerCode,
           invoices.customer_name_snapshot AS customerName, customers.phone, invoices.service_type AS serviceType, invoices.area_name_snapshot AS areaName, invoices.plan_name_snapshot AS planName, invoices.stb_number_snapshot AS stbNumber,
-          invoices.period_start AS periodStart, invoices.period_end AS periodEnd, invoices.issued_date AS issuedDate, invoices.months_billed AS monthsBilled,
+          invoices.period_start AS periodStart, invoices.period_end AS periodEnd, COALESCE(NULLIF(invoices.billing_month, ''), substr(invoices.period_start, 1, 7)) AS billingMonth, invoices.issued_date AS issuedDate, invoices.months_billed AS monthsBilled,
           invoices.current_period_amount_paise AS currentPeriodAmountPaise, invoices.previous_due_snapshot_paise AS previousDueSnapshotPaise,
           invoices.total_payable_paise AS totalPayablePaise, (SELECT SUM(amount_paise) FROM invoice_charges WHERE invoice_id = invoices.id) AS chargeAmountPaise,
           invoices.due_date AS dueDate, invoices.status, invoices.billing_mode AS billingMode, invoices.historical_reason AS historicalReason
@@ -106,7 +106,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
       const limit = request.query.limit ? z.coerce.number().int().min(1).max(200).parse(request.query.limit) : 100
       const offset = request.query.offset ? z.coerce.number().int().nonnegative().parse(request.query.offset) : 0
       const result = await db.execute({ sql: `SELECT invoices.id, invoices.invoice_code AS invoiceCode, invoices.customer_id AS customerId,
-        invoices.customer_name_snapshot AS customerName, invoices.period_start AS periodStart, invoices.period_end AS periodEnd,
+        invoices.customer_name_snapshot AS customerName, invoices.period_start AS periodStart, invoices.period_end AS periodEnd, COALESCE(NULLIF(invoices.billing_month, ''), substr(invoices.period_start, 1, 7)) AS billingMonth,
         invoices.issued_date AS issuedDate, invoices.current_period_amount_paise AS currentPeriodAmountPaise, invoices.previous_due_snapshot_paise AS previousDueSnapshotPaise,
         invoices.total_payable_paise AS totalPayablePaise, invoices.status, invoices.due_date AS dueDate, invoices.is_merged AS isMerged, invoices.billing_mode AS billingMode,
         EXISTS(SELECT 1 FROM invoice_merge_items WHERE merged_invoice_id = invoices.id) AS isCombined,

@@ -37,7 +37,9 @@ export function InvoiceForm({ serviceType, customers, initialCustomerId, onCreat
   const needsRestartChoice = expired && !restartChoice
   const normalStart = restartChoice === 'restart' ? today : customer?.nextBillingStartDate ?? today
   const [startDate, setStartDate] = useState(normalStart)
+  const [billingMonth, setBillingMonth] = useState(normalStart.slice(0, 7))
   const normalStartChanged = mode === 'normal' && hasInvoiceHistory && startDate !== normalStart
+  const billingMonthMatchesStart = mode !== 'normal' || billingMonth === startDate.slice(0, 7)
   const validCycles = Number.isInteger(cycles) && cycles >= 1 && cycles <= 24
   const latestMissedPeriodStart = addBillingDays(today, 1 - (validCycles ? cycles : 1) * 30)
   const startsBeforeInstallation = Boolean(startDate && customer?.installationDate && startDate < customer.installationDate)
@@ -50,6 +52,7 @@ export function InvoiceForm({ serviceType, customers, initialCustomerId, onCreat
     setCycles(1)
     setRestartChoice('')
     setStartDate(customer.nextBillingStartDate ?? todayInBusinessTimezone())
+    setBillingMonth((customer.nextBillingStartDate ?? todayInBusinessTimezone()).slice(0, 7))
     setIssuedDate(todayInBusinessTimezone())
     setPaymentDate(todayInBusinessTimezone())
     setReason('')
@@ -67,22 +70,25 @@ export function InvoiceForm({ serviceType, customers, initialCustomerId, onCreat
     setError('')
     if (!customer) return
     setStartDate(nextMode === 'normal' ? customer.nextBillingStartDate ?? today : customer.installationDate ?? today)
+    setBillingMonth((nextMode === 'normal' ? customer.nextBillingStartDate ?? today : customer.installationDate ?? today).slice(0, 7))
   }
 
   function chooseRestart(nextChoice: 'continuous' | 'restart') {
     setRestartChoice(nextChoice)
     setStartDate(nextChoice === 'restart' ? today : customer?.nextBillingStartDate ?? today)
+    setBillingMonth((nextChoice === 'restart' ? today : customer?.nextBillingStartDate ?? today).slice(0, 7))
     setError('')
   }
 
   function changeStartDate(nextDate: string) {
     setPreview(undefined)
     setStartDate(nextDate)
+    setBillingMonth(nextDate.slice(0, 7))
     setError('')
   }
 
   useEffect(() => {
-    if (!customer || !startDate || !validCycles || needsRestartChoice || normalStartChanged || startsBeforeInstallation || missedPeriodEndsInFuture) {
+    if (!customer || !startDate || !validCycles || needsRestartChoice || normalStartChanged || !billingMonthMatchesStart || startsBeforeInstallation || missedPeriodEndsInFuture) {
       setPreview(undefined)
       setPreviewLoading(false)
       return
@@ -95,11 +101,11 @@ export function InvoiceForm({ serviceType, customers, initialCustomerId, onCreat
         .finally(() => setPreviewLoading(false))
     }, 150)
     return () => { window.clearTimeout(timer); setPreviewLoading(false) }
-  }, [customer, cycles, missedPeriodEndsInFuture, mode, needsRestartChoice, normalStartChanged, serviceType, startDate, startsBeforeInstallation, validCycles])
+  }, [billingMonthMatchesStart, customer, cycles, missedPeriodEndsInFuture, mode, needsRestartChoice, normalStartChanged, serviceType, startDate, startsBeforeInstallation, validCycles])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!customer?.nextBillingStartDate || !preview || needsRestartChoice || normalStartChanged || startsBeforeInstallation || missedPeriodEndsInFuture) return
+    if (!customer?.nextBillingStartDate || !preview || needsRestartChoice || normalStartChanged || !billingMonthMatchesStart || startsBeforeInstallation || missedPeriodEndsInFuture) return
     if (preview.conflict) return setError(`Nothing was created. ${preview.conflict.invoiceCode} (${preview.conflict.status}) already covers ${formatBusinessDate(preview.conflict.periodStart)} to ${formatBusinessDate(preview.conflict.periodEnd)}. Choose dates that are fully available.`)
     setSubmitting(true)
     setError('')
@@ -111,6 +117,7 @@ export function InvoiceForm({ serviceType, customers, initialCustomerId, onCreat
         expectedPeriodStart: restartChoice === 'restart' ? today : customer.nextBillingStartDate,
         periodStart: startDate,
         issuedDate,
+        billingMonth: mode === 'normal' ? billingMonth : undefined,
         billingMode: mode,
         historicalReason: mode === 'historical' ? reason : undefined,
         restartService: mode === 'normal' && restartChoice === 'restart',
@@ -163,11 +170,13 @@ export function InvoiceForm({ serviceType, customers, initialCustomerId, onCreat
 
       {expired ? <fieldset className="restart-choice"><legend>Did service continue after {formatBusinessDate(addBillingDays(customer!.latestPeriodEnd!, 1))}?</legend><p>Choose what actually happened to the customer’s service.</p><div><label className={restartChoice === 'continuous' ? 'selected' : ''}><input type="radio" name="restartChoice" checked={restartChoice === 'continuous'} onChange={() => chooseRestart('continuous')} /><span><strong>Yes — service continued</strong><small>Keep billing from {formatBusinessDate(customer!.nextBillingStartDate!)}.</small></span></label><label className={restartChoice === 'restart' ? 'selected' : ''}><input type="radio" name="restartChoice" checked={restartChoice === 'restart'} onChange={() => chooseRestart('restart')} /><span><strong>No — service stopped</strong><small>Start again today. Do not charge the stopped days.</small></span></label></div></fieldset> : null}
 
+      {mode === 'normal' ? <label>Bill for Month *<input name="billingMonth" type="month" autoComplete="off" value={billingMonth} onChange={(event) => { setBillingMonth(event.target.value); setPreview(undefined); setError('') }} onBlur={(event) => { setBillingMonth(event.target.value); setPreview(undefined); setError('') }} required /><small className="field-help">This recharge is recorded for this month. The exact 30-day service dates are shown in the review below.</small>{!billingMonthMatchesStart ? <small className="field-error-inline" role="alert">This customer’s next recharge starts {formatBusinessDate(startDate)}. Select {startDate.slice(0, 7)} or use the precise date option.</small> : null}</label> : null}
+
       <fieldset className="recharge-length"><legend>{mode === 'normal' ? 'Recharge Length' : 'Older Service Length'} *</legend><div role="group" aria-label="Choose service length">{[1, 2, 3].map((value) => <button type="button" key={value} className={cycles === value ? 'selected' : ''} aria-pressed={cycles === value} onClick={() => setCycles(value)}><strong>{value * 30} Days</strong><small>{value === 1 ? '1 period' : `${value} periods`}</small></button>)}</div><details className="custom-recharge-length"><summary>Custom duration</summary><label>Custom 30-Day Periods<input name="monthsBilled" type="number" autoComplete="off" min="1" max="24" value={cycles} onChange={(event) => setCycles(Number(event.target.value))} required /></label><small className="field-help">The operation is all-or-nothing. If any selected date is already billed, nothing new is created.</small></details></fieldset>
 
       {mode === 'historical' ? <><div className="billing-date-fields"><label>Older Service Starts *<input name="periodStart" type="date" autoComplete="off" value={startDate} min={customer?.installationDate ?? undefined} max={latestMissedPeriodStart} onChange={(event) => changeStartDate(event.target.value)} required aria-describedby="billing-eligibility" /><small className="field-help">Every selected 30-day period must have ended today or earlier.</small>{startsBeforeInstallation ? <small className="field-error-inline" role="alert">Service cannot start before installation on {formatBusinessDate(customer!.installationDate!)}.</small> : missedPeriodEndsInFuture ? <small className="field-error-inline" role="alert">Choose {formatBusinessDate(latestMissedPeriodStart)} or earlier so all {cycles} periods have ended.</small> : null}</label><label>Invoice Date *<input name="issuedDate" type="date" autoComplete="off" value={issuedDate} max={today} onChange={(event) => setIssuedDate(event.target.value)} required /><small className="field-help">Use the date this bill was originally issued.</small></label></div><label>Reason for Older Bill *<textarea name="historicalReason" autoComplete="off" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={250} required placeholder="Example: Service dates found during account review…" /><small className="field-help">This reason is saved in the audit history.</small></label></> : null}
 
-      {mode === 'normal' && !needsRestartChoice ? <div className="billing-date-fields"><label>Service Starts *<input name="periodStart" type="date" autoComplete="off" value={startDate} min={customer?.installationDate ?? undefined} onChange={(event) => changeStartDate(event.target.value)} required aria-describedby="billing-eligibility" /><small className="field-help">{hasInvoiceHistory ? `Continuous service must start ${formatBusinessDate(normalStart)}. Use Add Older Bill for missed dates.` : 'Choose the first day covered by this recharge.'}</small>{normalStartChanged ? <small className="field-error-inline" role="alert">This account already has billing history. Continue from {formatBusinessDate(normalStart)} so service does not overlap or skip dates.</small> : null}</label><label>Invoice Date *<input name="issuedDate" type="date" autoComplete="off" value={issuedDate} max={today} onChange={(event) => setIssuedDate(event.target.value)} required /><small className="field-help">You can backdate this for a bill entered later.</small></label><span className="recharge-end">Service Ends<strong>{preview ? formatBusinessDate(preview.periodEnd) : 'Calculating…'}</strong></span></div> : null}
+      {mode === 'normal' && !needsRestartChoice ? <><div className="billing-date-fields"><span className="recharge-end">Service Ends<strong>{preview ? formatBusinessDate(preview.periodEnd) : 'Calculating…'}</strong></span></div><details className="advanced-options"><summary>Set precise service or invoice date (optional)</summary><div className="billing-date-fields"><label>Service Starts<input name="periodStart" type="date" autoComplete="off" value={startDate} min={customer?.installationDate ?? undefined} onChange={(event) => changeStartDate(event.target.value)} aria-describedby="billing-eligibility" /><small className="field-help">{hasInvoiceHistory ? `Continuous service must start ${formatBusinessDate(normalStart)}. Use Add Older Bill for missed dates.` : 'Choose the first day covered by this recharge.'}</small>{normalStartChanged ? <small className="field-error-inline" role="alert">This account already has billing history. Continue from {formatBusinessDate(normalStart)} so service does not overlap or skip dates.</small> : null}</label><label>Invoice Date<input name="issuedDate" type="date" autoComplete="off" value={issuedDate} max={today} onChange={(event) => setIssuedDate(event.target.value)} /><small className="field-help">You can backdate this for a bill entered later.</small></label></div></details></> : null}
 
       {previewLoading ? <p className="form-help" aria-live="polite">Checking dates and amount…</p> : null}
       {needsRestartChoice ? <p className="eligibility neutral"><FileCheck2 size={16} aria-hidden="true" />Choose whether service continued or stopped before creating the recharge.</p> : null}
