@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
-import { DateInputError, endOfCalendarMonth } from '../../src/lib/date.js'
+import { DateInputError, endOfCalendarMonth, parseStrictDate, todayInBusinessTimezone } from '../../src/lib/date.js'
 import { createInvoicePeriod } from '../../src/lib/billing.js'
 import { withWriteTransaction } from '../lib/db.js'
 import { methodNotAllowed, sendError } from '../lib/http.js'
@@ -8,7 +8,7 @@ import { createInvoiceInTransaction, InvoiceRequestError } from '../lib/invoice-
 import { requireSession } from '../lib/session.js'
 import { body, serviceTypeSchema } from '../lib/validation.js'
 
-const schema = z.object({ serviceType: serviceTypeSchema, throughMonth: z.string().regex(/^\d{4}-\d{2}$/), customerIds: z.array(z.number().int().positive()).optional(), preview: z.boolean().default(false) })
+const schema = z.object({ serviceType: serviceTypeSchema, throughMonth: z.string().regex(/^\d{4}-\d{2}$/), issuedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), customerIds: z.array(z.number().int().positive()).optional(), preview: z.boolean().default(false) })
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   if (!await requireSession(request, response)) return
@@ -16,6 +16,11 @@ export default async function handler(request: VercelRequest, response: VercelRe
   try {
     const input = body(schema, request.body)
     endOfCalendarMonth(input.throughMonth)
+    if (input.issuedDate) {
+      const issuedDate = parseStrictDate(input.issuedDate)
+      if (issuedDate.slice(0, 7) !== input.throughMonth) throw new InvoiceRequestError(400, 'Invoice date must be within the selected billing month.')
+      if (issuedDate > todayInBusinessTimezone()) throw new InvoiceRequestError(400, 'Invoice date cannot be in the future.')
+    }
     const result = await withWriteTransaction(async (transaction) => {
       const selected = input.customerIds?.length ? `AND customers.id IN (${input.customerIds.map(() => '?').join(',')})` : ''
       const customers = await transaction.execute({ sql: `SELECT customers.id, customers.customer_code AS customerCode, customers.name AS customerName, customers.status, customers.installation_date AS installationDate, customers.next_billing_start_date AS nextBillingStartDate, customers.plan_id AS planId, plans.price_paise AS pricePaise, plans.is_active AS planIsActive FROM customers LEFT JOIN plans ON plans.id = customers.plan_id
@@ -42,7 +47,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
           continue
         }
         try {
-          const created = await createInvoiceInTransaction(transaction, { serviceType: input.serviceType, customerId, monthsBilled: months, expectedPeriodStart: nextBillingStartDate, billingMonth: input.throughMonth, billingMode: 'normal' })
+          const created = await createInvoiceInTransaction(transaction, { serviceType: input.serviceType, customerId, monthsBilled: months, expectedPeriodStart: nextBillingStartDate, issuedDate: input.issuedDate, billingMonth: input.throughMonth, billingMode: 'normal' })
           generated.push({ ...identity, invoiceCode: created.invoiceCode, periodStart: created.periodStart, periodEnd: created.periodEnd, cycles: months, amountPaise: Number(customer.pricePaise) * months })
         }
         catch (error) { if (error instanceof InvoiceRequestError) failed.push({ ...identity, reason: error.message }); else throw error }

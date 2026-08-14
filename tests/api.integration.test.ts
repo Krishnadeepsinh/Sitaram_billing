@@ -303,18 +303,20 @@ describe('financial API flow', () => {
     await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Bulk Preview Customer', areaId: 1, planId: 1, installationDate: today, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
     const customerId = Number((created.body as { id: number }).id)
     const throughMonth = today.slice(0, 7)
+    const issuedDate = `${throughMonth}-01`
     const before = Number((await database().execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].count)
 
     const preview = new ResponseMock()
-    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, customerIds: [customerId], preview: true }), preview as unknown as VercelResponse)
+    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, issuedDate, customerIds: [customerId], preview: true }), preview as unknown as VercelResponse)
     expect(preview.statusCode).toBe(200)
     expect(preview.body).toEqual(expect.objectContaining({ generated: [], ready: [expect.objectContaining({ customerId, customerName: 'Bulk Preview Customer', periodStart: today, cycles: expect.any(Number), amountPaise: expect.any(Number) })], failed: [] }))
     expect(Number((await database().execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].count)).toBe(before)
 
     const billed = new ResponseMock()
-    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, customerIds: [customerId] }), billed as unknown as VercelResponse)
+    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, issuedDate, customerIds: [customerId] }), billed as unknown as VercelResponse)
     expect(billed.statusCode).toBe(201)
     expect(billed.body).toEqual(expect.objectContaining({ generated: [expect.objectContaining({ customerId, customerName: 'Bulk Preview Customer', customerCode: expect.any(String), invoiceCode: expect.any(String), periodStart: today, periodEnd: expect.any(String), cycles: expect.any(Number), amountPaise: expect.any(Number) })] }))
+    expect((await database().execute({ sql: 'SELECT issued_date AS issuedDate FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].issuedDate).toBe(issuedDate)
   })
 
   it('records a selected billing month and rejects a mismatched service month', async () => {

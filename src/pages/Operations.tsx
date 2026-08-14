@@ -433,6 +433,7 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
   const [invoiceOffset, setInvoiceOffset] = useState(0);
   const [bulkSelection, setBulkSelection] = useState<number[]>([]);
   const [bulkThroughMonth, setBulkThroughMonth] = useState(today.slice(0, 7));
+  const [bulkIssuedDate, setBulkIssuedDate] = useState("");
   const [bulkAreaId, setBulkAreaId] = useState("");
   const [bulkPreview, setBulkPreview] = useState<BulkInvoiceResult>();
   const [bulkResult, setBulkResult] = useState<BulkInvoiceResult>();
@@ -504,7 +505,7 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
     setSubmitting(true);
     try {
       if (!bulkPreview) {
-        const preview = await bulkCreateInvoices(serviceType, bulkThroughMonth, bulkSelection, true);
+        const preview = await bulkCreateInvoices(serviceType, bulkThroughMonth, bulkSelection, true, bulkIssuedDate || undefined);
         setBulkPreview(preview);
         setBulkSelection(preview.ready.map((customer) => customer.customerId));
         return;
@@ -513,6 +514,8 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
         serviceType,
         bulkThroughMonth,
         bulkPreview.ready.map((customer) => customer.customerId),
+        false,
+        bulkIssuedDate || undefined,
       );
       setBulkSelection([]);
       setBulkPreview(undefined);
@@ -690,11 +693,12 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                 setBulkPreview(undefined);
                 setBulkResult(undefined);
                 setBulkThroughMonth(today.slice(0, 7));
+                setBulkIssuedDate("");
                 setBulkAreaId("");
                 setBillingDialog("bulk");
               }}
             >
-              <Users size={16} /> Recharge Many
+              <Users size={16} /> Bulk Recharge
             </button>
             <button
               className="primary"
@@ -709,6 +713,7 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                 setBulkPreview(undefined);
                 setBulkResult(undefined);
                 setBulkThroughMonth(today.slice(0, 7));
+                setBulkIssuedDate("");
                 setBulkAreaId("");
                 setBillingDialog("due");
               }}
@@ -1091,7 +1096,7 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
         </Modal>
       )}
       {(billingDialog === "bulk" || billingDialog === "due") && (
-        <Modal wide title={bulkResult ? "Bulk Billing Complete" : billingDialog === "due" ? "Review Due Recharges" : "Recharge Many Customers"} onClose={() => { setBillingDialog(undefined); setBulkPreview(undefined); setBulkResult(undefined); }}>
+        <Modal wide title={bulkResult ? "Bulk Recharge Complete" : billingDialog === "due" ? "Review Due Recharges" : "Bulk Recharge"} onClose={() => { setBillingDialog(undefined); setBulkPreview(undefined); setBulkResult(undefined); }}>
           <form className="modal-form single-column" onSubmit={submitBulk}>
             <div className="modal-form-body">
             {bulkResult ? <><p className="form-help">One 30-day recharge was created for each customer whose next service period starts in {formatBusinessDate(`${bulkThroughMonth}-01`).slice(3)}.</p><section className="bulk-review" aria-live="polite"><div className="bulk-review-summary"><span><strong>{bulkResult.generated.length}</strong> Bills Created</span><span><strong>{bulkResult.failed.length}</strong> Need Attention</span><span><strong>{bulkResult.skipped.length}</strong> Not Billable Yet</span><span><strong>{formatRupees(bulkResult.generated.reduce((sum, item) => sum + item.amountPaise, 0))}</strong> Billed Total</span></div><div className="bulk-review-list">{bulkResult.generated.map((item) => <div className="ready" key={`created-${item.invoiceCode}`}><span><strong>{item.customerName}</strong><small>{item.customerCode} · {item.invoiceCode} · {item.cycles * 30} days</small></span><span>{formatBusinessDate(item.periodStart)} – {formatBusinessDate(item.periodEnd)}</span><strong>{formatRupees(item.amountPaise)}</strong></div>)}{bulkResult.failed.map((item) => <div className="blocked" key={`failed-${item.customerId}`}><span><strong>{item.customerName ?? `Customer ${item.customerId}`}</strong><small>{item.customerCode || "Needs review"}</small></span><span>{item.reason}</span><strong>Not created</strong></div>)}{bulkResult.skipped.map((item) => <div className="skipped" key={`skipped-${item.customerId}`}><span><strong>{item.customerName}</strong><small>{item.customerCode}</small></span><span>{item.reason}</span><strong>Skipped</strong></div>)}</div></section></> : <>
@@ -1102,11 +1107,16 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                 type="month"
                 autoComplete="off"
                 value={bulkThroughMonth}
-                onChange={(event) => { setBulkThroughMonth(event.target.value); setBulkSelection([]); setBulkPreview(undefined); }}
-                onBlur={(event) => { setBulkThroughMonth(event.target.value); setBulkSelection([]); setBulkPreview(undefined); }}
+                onChange={(event) => { setBulkThroughMonth(event.target.value); setBulkIssuedDate(""); setBulkSelection([]); setBulkPreview(undefined); }}
+                onBlur={(event) => { setBulkThroughMonth(event.target.value); setBulkIssuedDate(""); setBulkSelection([]); setBulkPreview(undefined); }}
                 disabled={submitting}
                 required
               />
+            </label>
+            <label>
+              Billing / Invoice Date (optional)
+              <input name="bulkIssuedDate" type="date" autoComplete="off" value={bulkIssuedDate} min={`${bulkThroughMonth}-01`} max={today} onChange={(event) => { setBulkIssuedDate(event.target.value); setBulkPreview(undefined); }} disabled={submitting} />
+              <small className="field-help">Leave blank to use today. This date is printed on every bill; each customer’s 30-day service dates stay automatic.</small>
             </label>
             <label>
               Area
