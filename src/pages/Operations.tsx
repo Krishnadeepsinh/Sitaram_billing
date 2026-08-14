@@ -495,9 +495,12 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
   const dueBillable = billable.filter(
     (customer) => customer.nextBillingStartDate! <= today && customer.nextBillingStartDate!.slice(0, 7) === today.slice(0, 7),
   );
-  const bulkEligibleCustomers = billable.filter(
-    (customer) => (!customer.latestPeriodEnd || customer.nextBillingStartDate!.slice(0, 7) === bulkThroughMonth) && (!bulkAreaId || customer.areaId === Number(bulkAreaId)),
-  );
+  const bulkEligibleCustomers = billable.filter((customer) => {
+    if (bulkAreaId && customer.areaId !== Number(bulkAreaId)) return false;
+    if (!customer.latestPeriodEnd) return true;
+    return customer.nextBillingStartDate!.slice(0, 7) === bulkThroughMonth
+      && (!bulkPeriodStart || customer.nextBillingStartDate === bulkPeriodStart);
+  });
 
   async function submitBulk(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1108,13 +1111,21 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
                 autoComplete="off"
                 value={bulkThroughMonth}
                 onChange={(event) => { setBulkThroughMonth(event.target.value); setBulkPeriodStart(""); setBulkSelection([]); setBulkPreview(undefined); }}
+                onBlur={(event) => {
+                  if (event.target.value !== bulkThroughMonth) {
+                    setBulkThroughMonth(event.target.value);
+                    setBulkPeriodStart("");
+                    setBulkSelection([]);
+                    setBulkPreview(undefined);
+                  }
+                }}
                 disabled={submitting}
                 required
               />
             </label>
             <label>
               Service Start Date (optional)
-              <input name="bulkPeriodStart" type="date" autoComplete="off" value={bulkPeriodStart} min={`${bulkThroughMonth}-01`} max={endOfCalendarMonth(bulkThroughMonth)} onInput={(event) => { setBulkPeriodStart(event.currentTarget.value); setBulkPreview(undefined); }} onChange={(event) => { setBulkPeriodStart(event.target.value); setBulkPreview(undefined); }} disabled={submitting} />
+              <input name="bulkPeriodStart" type="date" autoComplete="off" value={bulkPeriodStart} min={`${bulkThroughMonth}-01`} max={endOfCalendarMonth(bulkThroughMonth)} onInput={(event) => { setBulkPeriodStart(event.currentTarget.value); setBulkSelection([]); setBulkPreview(undefined); }} onChange={(event) => { setBulkPeriodStart(event.target.value); setBulkSelection([]); setBulkPreview(undefined); }} disabled={submitting} />
               <small className="field-help">Leave blank to continue each customer’s previous bill. An unbilled customer starts on the 1st of the selected month; an existing customer can only continue from their next service date.</small>
             </label>
             <label>
