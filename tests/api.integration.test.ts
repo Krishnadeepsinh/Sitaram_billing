@@ -303,20 +303,38 @@ describe('financial API flow', () => {
     await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Bulk Preview Customer', areaId: 1, planId: 1, installationDate: today, openingBalancePaise: 0, openingBalanceType: 'due' }), created as unknown as VercelResponse)
     const customerId = Number((created.body as { id: number }).id)
     const throughMonth = today.slice(0, 7)
-    const issuedDate = `${throughMonth}-01`
+    const firstDayOfMonth = `${throughMonth}-01`
     const before = Number((await database().execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].count)
 
     const preview = new ResponseMock()
-    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, issuedDate, customerIds: [customerId], preview: true }), preview as unknown as VercelResponse)
+    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, customerIds: [customerId], preview: true }), preview as unknown as VercelResponse)
     expect(preview.statusCode).toBe(200)
-    expect(preview.body).toEqual(expect.objectContaining({ generated: [], ready: [expect.objectContaining({ customerId, customerName: 'Bulk Preview Customer', periodStart: today, cycles: expect.any(Number), amountPaise: expect.any(Number) })], failed: [] }))
+    expect(preview.body).toEqual(expect.objectContaining({ generated: [], ready: [expect.objectContaining({ customerId, customerName: 'Bulk Preview Customer', periodStart: firstDayOfMonth, cycles: expect.any(Number), amountPaise: expect.any(Number) })], failed: [] }))
     expect(Number((await database().execute({ sql: 'SELECT COUNT(*) AS count FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].count)).toBe(before)
 
     const billed = new ResponseMock()
-    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, issuedDate, customerIds: [customerId] }), billed as unknown as VercelResponse)
+    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, customerIds: [customerId] }), billed as unknown as VercelResponse)
     expect(billed.statusCode).toBe(201)
-    expect(billed.body).toEqual(expect.objectContaining({ generated: [expect.objectContaining({ customerId, customerName: 'Bulk Preview Customer', customerCode: expect.any(String), invoiceCode: expect.any(String), periodStart: today, periodEnd: expect.any(String), cycles: expect.any(Number), amountPaise: expect.any(Number) })] }))
-    expect((await database().execute({ sql: 'SELECT issued_date AS issuedDate FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].issuedDate).toBe(issuedDate)
+    expect(billed.body).toEqual(expect.objectContaining({ generated: [expect.objectContaining({ customerId, customerName: 'Bulk Preview Customer', customerCode: expect.any(String), invoiceCode: expect.any(String), periodStart: firstDayOfMonth, periodEnd: expect.any(String), cycles: expect.any(Number), amountPaise: expect.any(Number) })] }))
+    expect((await database().execute({ sql: 'SELECT period_start AS periodStart FROM invoices WHERE customer_id = ?', args: [customerId] })).rows[0].periodStart).toBe(firstDayOfMonth)
+
+    const continuedStart = addBillingDays(firstDayOfMonth, 30)
+    const continued = new ResponseMock()
+    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth: continuedStart.slice(0, 7), customerIds: [customerId], preview: true }), continued as unknown as VercelResponse)
+    expect(continued.body).toEqual(expect.objectContaining({ ready: [expect.objectContaining({ customerId, periodStart: continuedStart })] }))
+
+    const customCreated = new ResponseMock()
+    await customerHandler(request('POST', cookie, { serviceType: 'cable', name: 'Bulk Custom Start Customer', areaId: 1, planId: 1, installationDate: today, openingBalancePaise: 0, openingBalanceType: 'due' }), customCreated as unknown as VercelResponse)
+    const customStart = `${throughMonth}-05`
+    const customPreview = new ResponseMock()
+    const customCustomerId = Number((customCreated.body as { id: number }).id)
+    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, periodStart: customStart, customerIds: [customCustomerId], preview: true }), customPreview as unknown as VercelResponse)
+    expect(customPreview.body).toEqual(expect.objectContaining({ ready: [expect.objectContaining({ customerName: 'Bulk Custom Start Customer', periodStart: customStart })] }))
+
+    const customBilled = new ResponseMock()
+    await bulkInvoiceHandler(request('POST', cookie, { serviceType: 'cable', throughMonth, periodStart: customStart, customerIds: [customCustomerId] }), customBilled as unknown as VercelResponse)
+    expect(customBilled.body).toEqual(expect.objectContaining({ generated: [expect.objectContaining({ customerId: customCustomerId, periodStart: customStart })] }))
+    expect((await database().execute({ sql: 'SELECT period_start AS periodStart FROM invoices WHERE customer_id = ?', args: [customCustomerId] })).rows[0].periodStart).toBe(customStart)
   })
 
   it('records a selected billing month and rejects a mismatched service month', async () => {
