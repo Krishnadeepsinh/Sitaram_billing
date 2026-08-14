@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowRightLeft, BarChart3, Bell, ChevronLeft, ChevronRight, CircleDollarSign, Command, DatabaseZap, FileText, HardDriveDownload, LayoutDashboard, LogOut, MapPin, Menu, MoreHorizontal, Package, Search, Settings, ShieldCheck, Users, Wallet, X } from 'lucide-react'
+import { ArrowRightLeft, BarChart3, Bell, ChevronLeft, ChevronRight, CircleAlert, CircleDollarSign, Command, DatabaseZap, FileText, HardDriveDownload, LayoutDashboard, LogOut, MapPin, Menu, MoreHorizontal, Package, Search, Settings, ShieldCheck, Users, Wallet, X } from 'lucide-react'
 import { apiHealth, currentAdmin, listCustomers, login, logout } from './lib/api'
 import type { Customer } from './lib/api'
 import './App.css'
@@ -14,6 +14,7 @@ const loadOperations = () => import('./pages/Operations')
 const DashboardPage = lazy(() => loadOperations().then(({ DashboardPage }) => ({ default: DashboardPage })))
 const ExpensesPage = lazy(() => loadOperations().then(({ ExpensesPage }) => ({ default: ExpensesPage })))
 const InvoicesPage = lazy(() => loadOperations().then(({ InvoicesPage }) => ({ default: InvoicesPage })))
+const MissingBillingPage = lazy(() => loadOperations().then(({ MissingBillingPage }) => ({ default: MissingBillingPage })))
 const PaymentsPage = lazy(() => loadOperations().then(({ PaymentsPage }) => ({ default: PaymentsPage })))
 const RemindersPage = lazy(() => loadOperations().then(({ RemindersPage }) => ({ default: RemindersPage })))
 const ReportsPage = lazy(() => loadOperations().then(({ ReportsPage }) => ({ default: ReportsPage })))
@@ -21,10 +22,10 @@ const SettingsPage = lazy(() => loadOperations().then(({ SettingsPage }) => ({ d
 const BackupPage = lazy(() => loadOperations().then(({ BackupPage }) => ({ default: BackupPage })))
 
 type ServiceType = 'cable' | 'broadband'
-const navigation = [['Dashboard', LayoutDashboard], ['Subscribers', Users], ['Invoices', FileText], ['Payments', Wallet], ['Reports', BarChart3], ['Expenses', CircleDollarSign], ['Reminders', Bell], ['Areas', MapPin], ['Plans', Package], ['Settings', Settings], ['Manual Backup', HardDriveDownload]] as const
+const navigation = [['Dashboard', LayoutDashboard], ['Subscribers', Users], ['Invoices', FileText], ['Payments', Wallet], ['Reports', BarChart3], ['Missing Billing', CircleAlert], ['Expenses', CircleDollarSign], ['Reminders', Bell], ['Areas', MapPin], ['Plans', Package], ['Settings', Settings], ['Manual Backup', HardDriveDownload]] as const
 const navigationGroups = [{ label: 'Daily Work', items: navigation.slice(0, 5) }, { label: 'More', items: navigation.slice(5) }]
 type Page = typeof navigation[number][0]
-const pageLabels: Record<Page, string> = { Dashboard: 'Today', Subscribers: 'Subscribers', Invoices: 'Billing', Payments: 'Payments', Reports: 'Reports', Expenses: 'Expenses', Reminders: 'Reminders', Areas: 'Areas', Plans: 'Plans', Settings: 'Settings', 'Manual Backup': 'Backup' }
+const pageLabels: Record<Page, string> = { Dashboard: 'Today', Subscribers: 'Subscribers', Invoices: 'Billing', Payments: 'Payments', Reports: 'Reports', 'Missing Billing': 'Missing Billing', Expenses: 'Expenses', Reminders: 'Reminders', Areas: 'Areas', Plans: 'Plans', Settings: 'Settings', 'Manual Backup': 'Backup' }
 const mobileNavigation = navigation.slice(0, 4)
 const pageSlugs = Object.fromEntries(navigation.map(([page]) => [page, page.toLowerCase().replace(' ', '-')])) as Record<Page, string>
 
@@ -114,7 +115,7 @@ function App() {
         <div className="topbar-start"><button className="sidebar-trigger desktop-only" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>{sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}</button><button className="sidebar-trigger mobile-only" onClick={() => setMenuOpen(true)} aria-label="Open navigation" aria-expanded={menuOpen}><Menu size={19} /></button><div className="breadcrumbs"><span>{serviceName} Workspace</span><i>/</i><strong>{pageLabels[page]}</strong></div></div>
         <div className="topbar-actions"><button className="command-trigger" onClick={() => { if (!document.querySelector('[aria-modal="true"]')) setCommandOpen(true) }}><Search size={15} aria-hidden="true" /><span>Find subscriber or page…</span><kbd>Ctrl K</kbd></button><button className="topbar-icon mobile-search-trigger" onClick={() => { if (!document.querySelector('[aria-modal="true"]')) setCommandOpen(true) }} aria-label="Find subscriber"><Search size={17} aria-hidden="true" /></button><span className={`connection-pill ${connected ? 'connected' : ''}`}><i />{connected ? 'Connected' : 'Offline'}</span><button className="user-chip" onClick={signOut} aria-label={`Sign out ${displayName}`}><span>{displayName.slice(0, 1).toUpperCase()}</span><span><strong>{displayName}</strong><small>Administrator</small></span><LogOut size={15} /></button></div>
       </header>
-      <Suspense fallback={<PageLoadingSkeleton />}><div className="workspace-content">{page === 'Dashboard' ? <DashboardPage serviceType={service} onNavigate={navigateTo} onOpenSearch={() => setCommandOpen(true)} /> : page === 'Plans' ? <PlansPage serviceType={service} /> : page === 'Areas' ? <AreasPage serviceType={service} /> : page === 'Subscribers' ? <CustomersPage key={`${service}:${routeHash}`} serviceType={service} initialQuery={new URLSearchParams(routeHash.split('?')[1] ?? '').get('query') ?? ''} initialAction={new URLSearchParams(routeHash.split('?')[1] ?? '').get('action') ?? ''} /> : page === 'Invoices' ? <InvoicesPage serviceType={service} adminName={displayName} /> : page === 'Payments' ? <PaymentsPage serviceType={service} adminName={displayName} /> : page === 'Reports' ? <ReportsPage serviceType={service} /> : page === 'Expenses' ? <ExpensesPage /> : page === 'Reminders' ? <RemindersPage serviceType={service} /> : page === 'Manual Backup' ? <BackupPage /> : <SettingsPage />}</div></Suspense>
+      <Suspense fallback={<PageLoadingSkeleton />}><div className="workspace-content">{page === 'Dashboard' ? <DashboardPage serviceType={service} onNavigate={navigateTo} onOpenSearch={() => setCommandOpen(true)} /> : page === 'Plans' ? <PlansPage serviceType={service} /> : page === 'Areas' ? <AreasPage serviceType={service} /> : page === 'Subscribers' ? <CustomersPage key={`${service}:${routeHash}`} serviceType={service} initialQuery={new URLSearchParams(routeHash.split('?')[1] ?? '').get('query') ?? ''} initialAction={new URLSearchParams(routeHash.split('?')[1] ?? '').get('action') ?? ''} initialBillingMonth={new URLSearchParams(routeHash.split('?')[1] ?? '').get('billingMonth') ?? ''} /> : page === 'Invoices' ? <InvoicesPage serviceType={service} adminName={displayName} /> : page === 'Missing Billing' ? <MissingBillingPage serviceType={service} /> : page === 'Payments' ? <PaymentsPage serviceType={service} adminName={displayName} /> : page === 'Reports' ? <ReportsPage serviceType={service} /> : page === 'Expenses' ? <ExpensesPage /> : page === 'Reminders' ? <RemindersPage serviceType={service} /> : page === 'Manual Backup' ? <BackupPage /> : <SettingsPage />}</div></Suspense>
     </main>
     <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
       {mobileNavigation.map(([label, Icon]) => <a className={page === label ? 'active' : ''} aria-current={page === label ? 'page' : undefined} href={pageHref(label, service)} key={label} onPointerEnter={() => void preloadPage(label)} onClick={() => setMenuOpen(false)}><Icon size={20} aria-hidden="true" /><span>{pageLabels[label]}</span></a>)}

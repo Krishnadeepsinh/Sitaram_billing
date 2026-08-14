@@ -508,7 +508,7 @@ export function AreasPage({ serviceType }: { serviceType: ServiceType }) {
   );
 }
 
-export function CustomersPage({ serviceType, initialQuery = "", initialAction = "" }: { serviceType: ServiceType; initialQuery?: string; initialAction?: string }) {
+export function CustomersPage({ serviceType, initialQuery = "", initialAction = "", initialBillingMonth = "" }: { serviceType: ServiceType; initialQuery?: string; initialAction?: string; initialBillingMonth?: string }) {
   const [areas, setAreas] = useState<Area[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -1965,6 +1965,7 @@ export function CustomersPage({ serviceType, initialQuery = "", initialAction = 
             serviceType={serviceType}
             customers={customers}
             initialCustomerId={quickInvoice.id}
+            initialBillingMonth={initialBillingMonth}
             onCancel={() => setQuickInvoice(undefined)}
             onCreated={(result) => {
               setQuickInvoice(undefined);

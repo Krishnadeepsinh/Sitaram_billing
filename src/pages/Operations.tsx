@@ -1283,6 +1283,49 @@ export function InvoicesPage({ serviceType, adminName }: { serviceType: ServiceT
   );
 }
 
+export function MissingBillingPage({ serviceType }: { serviceType: ServiceType }) {
+  const today = todayInBusinessTimezone();
+  const [month, setMonth] = useState(today.slice(0, 7));
+  const [areaId, setAreaId] = useState("");
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [areas, setAreas] = useState<Array<{ id: number; displayName: string }>>([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([listCustomers(serviceType, "", false, { limit: 500 }), listAreas(serviceType)])
+      .then(([customerResult, areaResult]) => { setCustomers(customerResult.items); setAreas(areaResult); })
+      .catch((cause: Error) => setError(cause.message))
+      .finally(() => setLoading(false));
+  }, [serviceType]);
+  const monthStart = `${month}-01`;
+  const monthEnd = endOfCalendarMonth(month);
+  const missing = useMemo(() => customers.filter((customer) => {
+    if (areaId && customer.areaId !== Number(areaId)) return false;
+    const historicalMissing = Boolean(customer.hasHistoricalGap && customer.historicalGapStart && customer.historicalGapEnd && customer.historicalGapStart <= monthEnd && customer.historicalGapEnd >= monthStart);
+    const currentMissing = customer.status === "active" && Boolean(customer.installationDate && customer.installationDate <= monthEnd && (!customer.latestPeriodEnd || (customer.nextBillingStartDate && customer.nextBillingStartDate <= monthEnd)));
+    return historicalMissing || currentMissing;
+  }), [areaId, customers, monthEnd, monthStart]);
+  return <section className="page-content">
+    <PageTitle title="Missing Billing" subtitle="Customers whose service has an unbilled period in the selected month." />
+    {error ? <ErrorNotice message={error} /> : <article className="panel table-panel responsive-register missing-billing-register">
+      <div className="panel-heading"><div><p className="eyebrow">Billing review</p><h2>Unbilled customers</h2></div><span>{missing.length} found</span></div>
+      <div className="filter-grid">
+        <label>Billing Month<input name="missingBillingMonth" type="month" autoComplete="off" value={month} onChange={(event) => setMonth(event.target.value)} onBlur={(event) => { if (event.target.value !== month) setMonth(event.target.value) }} required /></label>
+        <label>Area<select name="missingBillingArea" value={areaId} onChange={(event) => setAreaId(event.target.value)}><option value="">All areas</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.displayName}</option>)}</select></label>
+      </div>
+      {loading ? <Loading label="Checking billing coverage…" /> : missing.length ? <div className="table-wrap"><table><thead><tr><th>Subscriber</th><th>Area</th><th>Missing billing</th><th>Last billed through</th><th>Action</th></tr></thead><tbody>{missing.map((customer) => {
+        const historical = Boolean(customer.hasHistoricalGap && customer.historicalGapStart && customer.historicalGapEnd && customer.historicalGapStart <= monthEnd && customer.historicalGapEnd >= monthStart);
+        const missingStart = historical ? customer.historicalGapStart! : customer.latestPeriodEnd ? customer.nextBillingStartDate! : monthStart;
+        const missingEnd = historical ? customer.historicalGapEnd! : undefined;
+        const canRecharge = !historical && customer.planIsActive && customer.planId;
+        const action = historical ? "view" : canRecharge ? "recharge" : "setup";
+        return <tr key={customer.id}><td data-label="Subscriber"><strong>{customer.name}</strong><small>{customer.customerCode} · {customer.planName ?? "Plan missing"}</small></td><td data-label="Area">{customer.areaName}</td><td data-label="Missing billing"><strong>{historical ? "Historical gap" : customer.latestPeriodEnd ? "Recharge overdue" : "No bill created"}</strong><small>{formatBusinessDate(missingStart)}{missingEnd ? ` – ${formatBusinessDate(missingEnd)}` : " onward"}</small></td><td data-label="Last billed through">{customer.latestPeriodEnd ? formatBusinessDate(customer.latestPeriodEnd) : "No previous bill"}</td><td data-label="Action"><a className="primary row-action-button" href={`#/subscribers?${new URLSearchParams({ service: serviceType, query: customer.customerCode, action, billingMonth: month }).toString()}`}>{historical ? "Review" : canRecharge ? "Recharge" : "Setup"}</a></td></tr>;
+      })}</tbody></table></div> : <Empty message="No customers are missing billing for this month" />}
+    </article>}
+  </section>;
+}
+
 export function PaymentsPage({ serviceType, adminName }: { serviceType: ServiceType; adminName: string }) {
   const today = todayInBusinessTimezone();
   const [customers, setCustomers] = useState<Customer[]>([]);
