@@ -78,16 +78,15 @@ describe('PDF generation', () => {
     expect(parsed.searchParams.get('am')).toBe('200.00')
     expect(parsed.searchParams.get('tn')).toBe('Invoice INV-001')
     expect(parsed.searchParams.get('tr')).toBe('INV-001')
-    expect(invoicePaymentUri({ ...invoice, liveBalancePaise: 0 }, settings)).toBeNull()
+    expect(invoicePaymentUri({ ...invoice, currentCustomerDuePaise: 0 }, settings)).toBeNull()
   })
 
   it('shows payments and discounts separately from the amount left to pay', () => {
     const partialInvoice: InvoiceDetail = {
       ...invoice,
       currentPeriodAmountPaise: 20000,
-      previousDueSnapshotPaise: 5000,
-      totalPayablePaise: 25000,
       liveBalancePaise: 15000,
+      currentCustomerDuePaise: 20000,
       status: 'partial',
       allocations: [{ paymentCode: 'PAY-100', paymentDate: '2026-07-20', periodStart: invoice.periodStart, periodEnd: invoice.periodEnd, cashPaise: 10000, discountPaise: 0, creditPaise: 0 }],
     }
@@ -98,8 +97,14 @@ describe('PDF generation', () => {
       paymentReceivedPaise: 10000,
       discountGivenPaise: 0,
       customerCreditUsedPaise: 0,
-      amountLeftPaise: 15000,
+      amountLeftPaise: 20000,
     })
+  })
+
+  it('uses all unpaid customer invoices for the total and UPI QR, not only this month', () => {
+    const currentInvoice = { ...invoice, currentPeriodAmountPaise: 30000, liveBalancePaise: 30000, currentCustomerDuePaise: 90000 }
+    expect(invoiceDisplayBreakdown(currentInvoice)).toMatchObject({ monthlyServicePaise: 30000, oldUnpaidPaise: 60000, totalBillPaise: 90000, amountLeftPaise: 90000 })
+    expect(new URL(invoicePaymentUri(currentInvoice, settings)!).searchParams.get('am')).toBe('900.00')
   })
 
   it('keeps receipt payment, discount, covered amount, and unpaid amount distinct', () => {

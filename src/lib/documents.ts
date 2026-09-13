@@ -172,8 +172,8 @@ const wordsForMoney = (paise: number) => { const rupees = Math.floor(Math.abs(pa
 const rupee = (paise: number) => `Rs. ${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 function decodeDataUrl(value: string) { const encoded = value.split(',')[1] ?? ''; const binary = atob(encoded); return Uint8Array.from(binary, (character) => character.charCodeAt(0)) }
 
-export function invoicePaymentUri(invoice: Pick<InvoiceDetail, 'invoiceCode' | 'liveBalancePaise'>, settings: Pick<BusinessSettings, 'businessName' | 'upiId'>) {
-  const balanceDue = Math.max(0, Number(invoice.liveBalancePaise || 0))
+export function invoicePaymentUri(invoice: Pick<InvoiceDetail, 'invoiceCode' | 'currentCustomerDuePaise'>, settings: Pick<BusinessSettings, 'businessName' | 'upiId'>) {
+  const balanceDue = Math.max(0, Number(invoice.currentCustomerDuePaise || 0))
   if (!settings.upiId || balanceDue <= 0) return null
   const params = new URLSearchParams({
     pa: settings.upiId,
@@ -186,15 +186,17 @@ export function invoicePaymentUri(invoice: Pick<InvoiceDetail, 'invoiceCode' | '
   return `upi://pay?${params}`
 }
 
-export function invoiceDisplayBreakdown(invoice: Pick<InvoiceDetail, 'currentPeriodAmountPaise' | 'previousDueSnapshotPaise' | 'totalPayablePaise' | 'liveBalancePaise' | 'allocations'>) {
+export function invoiceDisplayBreakdown(invoice: Pick<InvoiceDetail, 'currentPeriodAmountPaise' | 'liveBalancePaise' | 'currentCustomerDuePaise' | 'allocations'>) {
+  const currentInvoiceBalancePaise = Math.max(0, Number(invoice.liveBalancePaise || 0))
+  const amountLeftPaise = Math.max(0, Number(invoice.currentCustomerDuePaise || 0))
   return {
     monthlyServicePaise: Number(invoice.currentPeriodAmountPaise || 0),
-    oldUnpaidPaise: Number(invoice.previousDueSnapshotPaise || 0),
-    totalBillPaise: Number(invoice.totalPayablePaise || 0),
+    oldUnpaidPaise: Math.max(0, amountLeftPaise - currentInvoiceBalancePaise),
+    totalBillPaise: Number(invoice.currentPeriodAmountPaise || 0) + Math.max(0, amountLeftPaise - currentInvoiceBalancePaise),
     paymentReceivedPaise: invoice.allocations.reduce((total, item) => total + Number(item.cashPaise || 0), 0),
     discountGivenPaise: invoice.allocations.reduce((total, item) => total + Number(item.discountPaise || 0), 0),
     customerCreditUsedPaise: invoice.allocations.reduce((total, item) => total + Number(item.creditPaise || 0), 0),
-    amountLeftPaise: Math.max(0, Number(invoice.liveBalancePaise || 0)),
+    amountLeftPaise,
   }
 }
 
@@ -241,7 +243,7 @@ async function createLegacyStatementPdf(variant: StatementVariant, data: Stateme
   page.drawRectangle({ x: 30, y: 739, width: 535, height: 2.5, color: navy })
   page.drawRectangle({ x: 500, y: 739, width: 65, height: 2.5, color: accent })
   const info = variant === 'invoice'
-    ? [['INVOICE NO', data.invoiceCode], ['BILLING DATE', statementDate(data.issuedDate)], ['DUE DATE', statementDate(data.dueDate)], ['STATUS', invoiceStatusLabel(data.status, Number(data.liveBalancePaise || 0))]]
+    ? [['INVOICE NO', data.invoiceCode], ['BILLING DATE', statementDate(data.issuedDate)], ['DUE DATE', statementDate(data.dueDate)], ['STATUS', invoiceStatusLabel(data.status, Number(data.currentCustomerDuePaise || 0))]]
     : [['RECEIPT NO', data.paymentCode], ['PAYMENT DATE', statementDate(data.paymentDate)], ['PAYMENT METHOD', String(data.paymentMode || '-').toUpperCase()], ['AMOUNT PAID', rupee(Number(data.amountReceivedPaise || 0))]]
   page.drawLine({ start: { x: 30, y: 681 }, end: { x: 565, y: 681 }, thickness: .65, color: line })
   info.forEach(([label, value], index) => {
@@ -294,7 +296,7 @@ async function createLegacyStatementPdf(variant: StatementVariant, data: Stateme
     const billRows = [
       { label: 'Monthly Service', value: breakdown.monthlyServicePaise, color: ink, bold: false },
       { label: 'Old Unpaid Amount', value: breakdown.oldUnpaidPaise, color: ink, bold: false },
-      { label: 'Total Bill', value: breakdown.totalBillPaise, color: navy, bold: true },
+      { label: 'Total Pending', value: breakdown.totalBillPaise, color: navy, bold: true },
       { label: 'Payment Already Received', value: breakdown.paymentReceivedPaise, color: green, bold: true, subtract: true },
       { label: 'Discount Given', value: breakdown.discountGivenPaise, color: breakdown.discountGivenPaise > 0 ? orange : muted, bold: breakdown.discountGivenPaise > 0, subtract: true },
       ...(breakdown.customerCreditUsedPaise > 0 ? [{ label: 'Customer Credit Used', value: breakdown.customerCreditUsedPaise, color: navy, bold: false, subtract: true }] : []),
@@ -315,7 +317,7 @@ async function createLegacyStatementPdf(variant: StatementVariant, data: Stateme
     const amountLeft = rupee(breakdown.amountLeftPaise)
     draw(amountLeft, 548 - textWidth(amountLeft, 17, true), y - 30, 17, true, dueColor)
     y -= 58
-    draw(`Total Bill in words: ${wordsForMoney(breakdown.totalBillPaise)}`, 30, y, 7.5, false, muted)
+    draw(`Total pending in words: ${wordsForMoney(breakdown.totalBillPaise)}`, 30, y, 7.5, false, muted)
     y -= 27
 
     draw(breakdown.amountLeftPaise > 0 ? 'HOW TO PAY' : 'PAYMENT STATUS', 30, y, 9.5, true, orange)
@@ -487,8 +489,8 @@ async function createStatementPdf(variant: StatementVariant, data: StatementData
     drawMetadata(704, [['INVOICE NO', invoice.invoiceCode], ['BILLING DATE', statementDate(invoice.issuedDate)], ['DUE DATE', statementDate(invoice.dueDate)], ['STATUS', status, statusInk]])
     const detailTop = 635; const customerHeight = drawDetailCard(30, detailTop, 'CUSTOMER', [['Full Name', invoice.customerName], ['Customer ID', invoice.customerCode], ['Mobile', invoice.phone || ''], ['Area', invoice.areaName || ''], ['STB', invoice.stbNumber || '']]); const serviceHeight = drawDetailCard(310, detailTop, 'SERVICE DETAILS', [['Service', serviceLabel], ['Plan', invoice.planName || ''], ['Billing cycle', invoice.monthsBilled === 1 ? '30 days' : `${invoice.monthsBilled} billing cycles`], ['Service period', `${statementDate(invoice.periodStart)} to ${statementDate(invoice.periodEnd)}`], ['Months billed', String(invoice.monthsBilled || 1)]])
     let y = detailTop - Math.max(customerHeight, serviceHeight) - 20; drawBar('BILL SUMMARY', y); y -= 30; page.drawRectangle({ x: 30, y: y - 20, width: 535, height: 20, color: soft, borderColor: line, borderWidth: .45 }); draw('DESCRIPTION', 42, y - 13, 7.2, true, navy); drawRight('AMOUNT (Rs.)', 553, y - 13, 7.2, true, navy); y -= 20
-    y = drawMoneyRow(y, `Monthly Service - ${invoice.planName || serviceLabel} - ${invoice.monthsBilled === 1 ? '30 days' : `${invoice.monthsBilled} billing cycles`}`, breakdown.monthlyServicePaise); if (breakdown.oldUnpaidPaise > 0) y = drawMoneyRow(y, 'Old Unpaid Amount', breakdown.oldUnpaidPaise); y = drawMoneyRow(y, 'Total Bill', breakdown.totalBillPaise, { bold: true, color: navy, fill: rgb(.95, .97, 1) }); if (breakdown.paymentReceivedPaise > 0) y = drawMoneyRow(y, 'Payment Already Received', breakdown.paymentReceivedPaise, { subtract: true, bold: true, color: red }); if (breakdown.discountGivenPaise > 0) y = drawMoneyRow(y, 'Discount Given', breakdown.discountGivenPaise, { subtract: true, color: red }); if (breakdown.customerCreditUsedPaise > 0) y = drawMoneyRow(y, 'Customer Credit Used', breakdown.customerCreditUsedPaise, { subtract: true, color: red })
-    const balanceTop = y - 8; const balanceColor = breakdown.amountLeftPaise > 0 ? orange : green; page.drawRectangle({ x: 30, y: balanceTop - 54, width: 535, height: 54, color: breakdown.amountLeftPaise > 0 ? orangeSoft : greenSoft, borderColor: balanceColor, borderWidth: .9 }); draw('AMOUNT LEFT TO PAY', 44, balanceTop - 18, 9.8, true, balanceColor); drawRight(breakdown.amountLeftPaise > 0 ? money(breakdown.amountLeftPaise) : 'Rs. 0.00', 535, balanceTop - 37, 17, true, balanceColor); draw(`Total Bill in words: ${wordsForMoney(breakdown.totalBillPaise)}`, 44, balanceTop - 47, 7.5, false, ink)
+    y = drawMoneyRow(y, `Monthly Service - ${invoice.planName || serviceLabel} - ${invoice.monthsBilled === 1 ? '30 days' : `${invoice.monthsBilled} billing cycles`}`, breakdown.monthlyServicePaise); if (breakdown.oldUnpaidPaise > 0) y = drawMoneyRow(y, 'Old Unpaid Amount', breakdown.oldUnpaidPaise); y = drawMoneyRow(y, 'Total Pending', breakdown.totalBillPaise, { bold: true, color: navy, fill: rgb(.95, .97, 1) }); if (breakdown.paymentReceivedPaise > 0) y = drawMoneyRow(y, 'Payment Already Received', breakdown.paymentReceivedPaise, { subtract: true, bold: true, color: red }); if (breakdown.discountGivenPaise > 0) y = drawMoneyRow(y, 'Discount Given', breakdown.discountGivenPaise, { subtract: true, color: red }); if (breakdown.customerCreditUsedPaise > 0) y = drawMoneyRow(y, 'Customer Credit Used', breakdown.customerCreditUsedPaise, { subtract: true, color: red })
+    const balanceTop = y - 8; const balanceColor = breakdown.amountLeftPaise > 0 ? orange : green; page.drawRectangle({ x: 30, y: balanceTop - 54, width: 535, height: 54, color: breakdown.amountLeftPaise > 0 ? orangeSoft : greenSoft, borderColor: balanceColor, borderWidth: .9 }); draw('AMOUNT LEFT TO PAY', 44, balanceTop - 18, 9.8, true, balanceColor); drawRight(breakdown.amountLeftPaise > 0 ? money(breakdown.amountLeftPaise) : 'Rs. 0.00', 535, balanceTop - 37, 17, true, balanceColor); draw(`Total pending in words: ${wordsForMoney(breakdown.totalBillPaise)}`, 44, balanceTop - 47, 7.5, false, ink)
     const howTop = balanceTop - 70; drawBar(breakdown.amountLeftPaise > 0 ? 'HOW TO PAY' : 'PAYMENT STATUS', howTop); const bodyBottom = 76; page.drawRectangle({ x: 30, y: bodyBottom, width: 535, height: howTop - 22 - bodyBottom, borderColor: navy, borderWidth: .65 }); const instructions = breakdown.amountLeftPaise > 0 ? [`Pay exactly ${money(breakdown.amountLeftPaise)}`, ...(settings.upiId ? [`UPI: ${settings.upiId}`] : []), `Use reference: ${invoice.invoiceCode}`, `Receipt is issued after ${admin} records payment.`, `Help: Call or WhatsApp ${supportNumber}`] : [`This bill is fully paid.`, `Invoice reference: ${invoice.invoiceCode}`, `Help: Call or WhatsApp ${supportNumber}`]; const helpPrefix = 'Help: Call or WhatsApp '; instructions.forEach((item, index) => { const lineY = howTop - 40 - index * 16; const numbered = `${index + 1}. `; if (item.startsWith(helpPrefix)) { const label = `${numbered}${helpPrefix}`; draw(label, 44, lineY, 7.6, false, ink); draw(item.slice(helpPrefix.length), 44 + width(label, 7.6), lineY, 7.6, true, orange) } else draw(`${numbered}${item}`, 44, lineY, 7.6, false, ink) }); const paymentUri = invoicePaymentUri(invoice, settings); if (paymentUri) { const qrData = await QRCode.toDataURL(paymentUri, { margin: 1, width: 160 }); const qr = await pdf.embedPng(decodeDataUrl(qrData)); page.drawLine({ start: { x: 370, y: bodyBottom + 8 }, end: { x: 370, y: howTop - 30 }, thickness: .5, color: line }); page.drawRectangle({ x: 423, y: bodyBottom + 8, width: 112, height: 101, borderColor: navy, borderWidth: .6 }); page.drawImage(qr, { x: 435, y: bodyBottom + 28, width: 88, height: 68 }); const caption = `${money(breakdown.amountLeftPaise)} - ${invoice.invoiceCode}`; drawCenter(caption, 479, bodyBottom + 16, 6.4, true, navy) }
     drawFooter(`Thank you for choosing ${settings.businessName || 'Sitaram Cable & Broadband'} | ${settings.upiId || ''} | Support: ${supportNumber}`, supportNumber)
   } else {
